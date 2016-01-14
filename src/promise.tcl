@@ -343,24 +343,6 @@ proc promise::_make_errval {args} {
     return [list $msg $edict]
 }
                             
-package provide promise 0.1
-
-package require http
-proc checkurl {url} {
-    set prom [promise::Promise new [promise::lambda {url prom} {
-        http::geturl $url -method HEAD -command [promise::lambda {prom tok} {
-            upvar #0 $tok http_state
-            $prom resolve [list $http_state(url) $http_state(status)]
-            ::http::cleanup $tok
-        } $prom]
-    } $url]]
-    return $prom
-}
-
-proc checkurls {urls} {
-    return [promise::all [lmap url $urls {checkurl $url}]]
-}
-
 proc promise::pgeturl {url args} {
     uplevel #0 {package require http}
     proc [namespace current]::pgeturl {url args} {
@@ -470,3 +452,23 @@ proc promise::pworker {tpool script} {
         tpool::post -detached -nowait $tpool $thread_script
     } $tpool $script]]
 }
+
+if {0} {
+    package require http
+    proc checkurl {url} {
+        set prom [promise::Promise new [promise::lambda {url prom} {
+            http::geturl $url -method HEAD -command [promise::lambda {prom tok} {
+                upvar #0 $tok http_state
+                $prom resolve [list $http_state(url) $http_state(status)]
+                ::http::cleanup $tok
+            } $prom]
+        } $url]]
+        return $prom
+    }
+
+    proc checkurls {urls} {
+        return [promise::all [lmap url $urls {checkurl $url}]]
+    }
+}
+
+package provide promise 0.2
