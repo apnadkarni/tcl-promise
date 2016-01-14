@@ -4,7 +4,9 @@
 #
 # See the file license.terms for license
 
-namespace eval promise {}
+namespace eval promise {
+    proc version {} { return 0.2 }
+}
 
 proc promise::lambda {arguments body args} {
     return [list ::apply [list $arguments $body] {*}$args]
@@ -286,7 +288,11 @@ proc promise::all {promises} {
         
     return $all_promise
 }
-          
+
+proc promise::alln args {
+    return [all $args]
+}
+
 # Callback for promise::all.
 #  all_promise - the "master" promise returned by the all call.
 #  remaining_promises - the list of remaining promises still to be resolved.
@@ -310,6 +316,7 @@ proc promise::_all_helper {all_promise remaining_promises values resolution valu
     if {[llength $remaining_promises] == 0} {
         # No more promises left. All done.
         $all_promise resolve $values
+        return
     }
 
     # Wait on the remaining promises
@@ -469,6 +476,14 @@ if {0} {
     proc checkurls {urls} {
         return [promise::all [lmap url $urls {checkurl $url}]]
     }
+
+    [promise::all [
+                   list [
+                         promise::ptask {expr 1+1}
+                        ] [
+                           promise::ptask {expr 2+2}
+                          ]
+                  ]] done [promise::lambda val {puts [tcl::mathop::* {*}$val]}] 
 }
 
-package provide promise 0.2
+package provide promise [promise::version]
