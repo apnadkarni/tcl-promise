@@ -27,7 +27,7 @@ oo::class create promise::Promise {
     #            value or error
     #  FULFILLED - The promise has been assigned a value
     #  REJECTED  - The promise has been assigned an error
-    #  ATTACHED  - The promise is attached to another promise
+    #  CHAINED  - The promise is attached to another promise
     variable _state
 
     # The promise value once it is fulfilled or rejected. In the latter
@@ -59,7 +59,7 @@ oo::class create promise::Promise {
         #  operation.
         # The command prefix $cmd is passed an additional argument - the
         # name of this Promise object. It should arrange for one of the
-        # object's settle methods [fulfill], [resolve_with_promise] or
+        # object's settle methods [fulfill], [chain] or
         # [reject] to be called when the operation completes.
         
         set _state PENDING
@@ -87,7 +87,7 @@ oo::class create promise::Promise {
         # Returns the current state of the promise
         #
         # The promise state may be one of the values 'PENDING',
-        # 'FULFILLED', 'REJECTED' or 'ATTACHED'
+        # 'FULFILLED', 'REJECTED' or 'CHAINED'
         return $_state
     }
     
@@ -125,7 +125,7 @@ oo::class create promise::Promise {
     }
     
     method FulfillAttached {value} {
-        if {$_state ne "ATTACHED"} {
+        if {$_state ne "CHAINED"} {
             return
         }
         set _value $value
@@ -135,7 +135,7 @@ oo::class create promise::Promise {
     }
     
     method RejectAttached {erval} {
-        if {$_state ne "ATTACHED"} {
+        if {$_state ne "CHAINED"} {
             return
         }
         set _value $erval
@@ -146,9 +146,23 @@ oo::class create promise::Promise {
     
     # Method to invoke to fulfil a promise with a value or another promise.
     method fulfill {value} {
+        # Fulfills the promise
+        #   value - the value with which the promise is fulfilled
+        #
+        # Returns '0' if promise had already been settled and '1' if
+        # it was fulfilled by the current call.
+
+        #ruff
+        # If the promise has already been settled, the method has no effect.
         if {$_state ne "PENDING"} {
             return 0;             # Already settled
         }
+        
+        #ruff
+        # Otherwise, it is transitioned to the 'FULFILLED' state with
+        # the value specified by $value. If there are any fulfillment
+        # handlers registered by the [done] or [then] methods, they
+        # are scheduled to be run.
         set _value $value
         set _state FULFILLED
         my ScheduleHandlers
@@ -156,27 +170,53 @@ oo::class create promise::Promise {
     }
 
     # Method to invoke to fulfil a promise with a value or another promise.
-    method resolve_with_promise {promise} {
+    method chain {promise} {
+        # Chains the promise to another promise
+        #   promise - the [Promise] object to which this promise is to
+        #     be chained
+        #
+        # Returns '0' if promise had already been settled and '1' otherwise.
+
+        #ruff
+        # If the promise has already been settled, the method has no effect.
         if {$_state ne "PENDING"} {
-            return 0;             # Already settled
+            return 0;
         }
+
+        #ruff
+        # Otherwise, it is chained to $promise so that it reflects that
+        # other promise's state.
         if {[catch {
             $promise done [namespace code {my FulfillAttached}] [namespace code {my RejectAttached}]
         } msg edict]} {
             my reject [list $msg $edict]
         } else {
-            set _state ATTACHED
+            set _state CHAINED
         }
         
         return 1
     }
 
-    # Method to invoke handlers when promise is rejected.
-    # By convention, errval should be [list message error_dictionary]
     method reject {errval} {
+        # Rejects the promise
+        #   errval - the value with which the promise is rejected.
+        #     By convention, $errval should be a list consisting of an error
+        #     message and error dictionary.
+        #
+        # Returns '0' if promise had already been settled and '1' if
+        # it was rejected by the current call.
+
+        #ruff
+        # If the promise has already been settled, the method has no effect.
         if {$_state ne "PENDING"} {
             return 0;             # Already settled
         }
+
+        #ruff
+        # Otherwise, it is transitioned to the 'REJECTED' state with
+        # the value specified by $errval. If there are any reject
+        # handlers registered by the [done] or [then] methods, they
+        # are scheduled to be run.
         set _value $errval
         set _state REJECTED
         my ScheduleHandlers
@@ -207,23 +247,85 @@ oo::class create promise::Promise {
         set _handlers [list ]
         my GC
         return 
-    }        
+    } 
 
-    method done {on_success {on_error {}}} {
+    method done {on_fulfill {on_reject {}}} {
+        # Registers callback handlers to be run when the promise is settled
+        #  on_fulfill - command prefix for the callback handler to run
+        #    if the promise is fulfilled. If an empty string, no fulfill
+        #    handler is registered.
+        #  on_reject - command prefix for the callback handler to run
+        #    if the promise is rejected. If unspecified or an empty string,
+        #    no reject handler is registered.
+        # Both handlers are called with an additional argument which is
+        # the value with which the promise was settled.
+        # 
+        # The command may be called multiple times to register multiple
+        # handlers to be run at promise settlement. If the promise was
+        # already settled at the time the call was made, the handlers
+        # are invoked immediately. In all cases, handlers are not called
+        # directly, but are invoked by scheduling through the event loop.
+        #
+        # The method triggers garbage collection of the object if the
+        # promise has been settled and registered handlers have been
+        # scheduled. Applications can hold on to the object through
+        # appropriate use of the [ref] and [unref] methods.
+        #
+
         # TBD - as per the Promise/A+ spec, errors in done should generate
         # a background error (unlike then).
-        lappend _handlers [list $on_success $on_error]
+        lappend _handlers [list $on_fulfill $on_reject]
         # In case promise already fulfilled, we will need to run the handlers
         my ScheduleHandlers
+
+        #ruff
+        # The method does not return a value.
         return
     }
     
-    method then {on_success {on_error {}}} {
-        return [[self class] new [list apply [list {predecessor on_success on_error prom} {
+    method then {on_fulfill {on_reject {}}} {
+        # Registers callback handlers to be run when the promise is settled
+        # and returns a new [Promise] object that will be settled by the
+        # handlers.
+        #  on_fulfill - command prefix for the callback handler to run
+        #    if the promise is fulfilled. If an empty string, no fulfill
+        #    handler is registered.
+        #  on_reject - command prefix for the callback handler to run
+        #    if the promise is rejected. If unspecified or an empty string,
+        #    no reject handler is registered.
+        # Both handlers are called with an additional argument which is
+        # the value with which the promise was settled.
+        # 
+        # The command may be called multiple times to register multiple
+        # handlers to be run at promise settlement. If the promise was
+        # already settled at the time the call was made, the handlers
+        # are invoked immediately. In all cases, handlers are not called
+        # directly, but are invoked by scheduling through the event loop.
+        #
+        # If the handler that is invoked runs without error, its return
+        # value fulfills the new promise returned by the 'then' method.
+        # If it raises an exception, the new promise will be rejected
+        # with the error message and dictionary from the exception.
+        #
+        # Alternatively, the handlers can explicitly invoke commands
+        # [then_fulfill], [then_reject] or [then_chain] to
+        # resolve the returned promise. In this case, the return value
+        # (including exceptions) from the handlers are ignored.
+        #
+        # If 'on_fulfill' (or 'on_reject') is an empty string (or unspecified),
+        # the new promise is created and fulfilled (or rejected) with
+        # the same value that would have been passed in to the handlers.
+        #
+        # The method triggers garbage collection of the object if the
+        # promise has been settled and registered handlers have been
+        # scheduled. Applications can hold on to the object through
+        # appropriate use of the [ref] and [unref] methods.
+        #
+        return [[self class] new [list apply [list {predecessor on_fulfill on_reject prom} {
             $predecessor done \
-                 [list ::promise::_then_handler $prom FULFILLED $on_success] \
-                 [list ::promise::_then_handler $prom REJECTED $on_error]
-        }] [self] $on_success $on_error]]
+                 [list ::promise::_then_handler $prom FULFILLED $on_fulfill] \
+                 [list ::promise::_then_handler $prom REJECTED $on_reject]
+        }] [self] $on_fulfill $on_reject]]
     }
 }
 
@@ -250,7 +352,7 @@ proc promise::_then_handler {target_promise status cmd value} {
         switch -exact -- $status {
             FULFILLED { $target_promise fulfill $value }
             REJECTED  { $target_promise reject $value }
-            ATTACHED -
+            CHAINED -
             PENDING  -
             default {
                 $target_promise reject [promise::_make_errval PROMISE THEN STATE "Internal error: invalid status $state"]
@@ -273,6 +375,21 @@ proc promise::_then_handler {target_promise status cmd value} {
 }
 
 proc promise::then_fulfill {value} {
+    # Fulfills the promise returned by a [then] method call from
+    # within its callback handler
+    #  value - the value with which to fulfill the promise
+    #
+    # The [Promise.then] method is a mechanism to chain asynchronous
+    # callbacks by registering them on a promise. It returns a new
+    # promise which is settled by the return value from the handler,
+    # or by the handler calling one of three commands - 'then_fulfill',
+    # [then_reject] or [then_promise]. Calling 'then_fulfill' fulfills
+    # the promise returned by the 'then' method that queued the currently
+    # running callback.
+    #
+    # It is an error to call this command from outside a callback
+    # that was queued via the [then] method on a promise.
+    
     # TBD - what if someone calls this from within a uplevel #0 ? The
     # upvar will be all wrong
     upvar #1 target_promise target_promise
@@ -283,16 +400,46 @@ proc promise::then_fulfill {value} {
     $target_promise fulfill $value
 }
 
-proc promise::then_promise {promise} {
+proc promise::then_chain {promise} {
+    # Chains the promise returned by a [then] method call to
+    # another promise
+    #  promise - the promise to which the promise returned by [then] is
+    #     to be chained
+    #
+    # The [Promise.then] method is a mechanism to chain asynchronous
+    # callbacks by registering them on a promise. It returns a new
+    # promise which is settled by the return value from the handler,
+    # or by the handler calling one of three commands - [then_fulfill],
+    # 'then_reject' or [then_promise]. Calling 'then_chain' chains
+    # the promise returned by the 'then' method that queued the currently
+    # running callback to $promise so that the former will be settled
+    # based on the latter.
+    #
+    # It is an error to call this command from outside a callback
+    # that was queued via the [then] method on a promise.
     upvar #1 target_promise target_promise
     if {![info exists target_promise]} {
-        set msg "promise::then_promise called in invalid context."
+        set msg "promise::then_chain called in invalid context."
         throw [list PROMISE THEN FULFILL NOTARGET $msg] $msg
     }
-    $target_promise resolve_with_promise $promise
+    $target_promise chain $promise
 }
 
 proc promise::then_reject {errval} {
+    # Rejects the promise returned by a [then] method call from
+    # within its callback handler
+    #  errval - the value with which to fulfill the promise
+    #
+    # The [Promise.then] method is a mechanism to chain asynchronous
+    # callbacks by registering them on a promise. It returns a new
+    # promise which is settled by the return value from the handler,
+    # or by the handler calling one of three commands - [then_fulfill],
+    # 'then_reject' or [then_promise]. Calling 'then_reject' rejects
+    # the promise returned by the 'then' method that queued the currently
+    # running callback.
+    #
+    # It is an error to call this command from outside a callback
+    # that was queued via the [then] method on a promise.
     upvar #1 target_promise target_promise
     if {![info exists target_promise]} {
         set msg "promise::then_reject called in invalid context."
@@ -587,7 +734,6 @@ proc promise::pworker {tpool script} {
     # containing the error message and error dictionary from the script
     # failure.
 
-    
     # No need for package require Thread since if tpool is passed to
     # us, Thread must already be loaded
     return [Promise new [lambda {tpool script prom} {
@@ -641,7 +787,7 @@ proc promise::_document_self {path args} {
         A promise is said to be resolved if it is settled or if it
         is attached to the state of another promise.
 
-        In this package, the Promise class implements promises.
+        In this package, the [::promise::Promise] class implements promises.
     }
     
     set gc {
@@ -656,9 +802,8 @@ proc promise::_document_self {path args} {
         run. This removes the burden from the application in the most common
         usage scenarios. In cases where the application wants the object to
         persist, for example, when the resolved value is accessed multiple
-        times, it can use the 'ref' and 'unref' methods of the
-        [::promise::Promise] object to explicitly manage the lifetime of the
-        object.
+        times, it can use the 'ref' and 'unref' methods of a
+        [::promise::Promise] object to explicitly manage its lifetime.
         
     }
     
