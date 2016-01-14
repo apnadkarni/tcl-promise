@@ -1,6 +1,8 @@
-# after idle [namespace code {my Private}]
-#proc callback args {tailcall namespace code $args}; after idle [callback my Private $param]
-#proc callback {cmd args} {linsert $args 0 [uplevel 1 [list namespace which $cmd]]}
+#
+# Copyright (c) 2015, Ashok P. Nadkarni
+# All rights reserved.
+#
+# See the file license.terms for license
 
 namespace eval promise {}
 
@@ -9,10 +11,12 @@ proc promise::lambda {arguments body args} {
 }
 
 # Credits:
-# This implementation is based on https://www.promisejs.org,
+# This implementation is based on the spec and tutorials at
+# https://promisesaplus.com/
+# https://www.promisejs.org,
 # https://github.com/domenic/promises-unwrapping,
 # https://github.com/kriskowal/q/blob/v1/design/README.js,
-# https://promisesaplus.com/
+
 catch {promise::Promise destroy}
 oo::class create promise::Promise {
 
@@ -35,10 +39,23 @@ oo::class create promise::Promise {
     # via the then method.
     variable _handlers
 
+    # Reference counting to free up promises since Tcl does not have
+    # garbage collection for objects. An *internal* reference count
+    # is maintained when callbacks are scheduled so that a promise
+    # is not released while a callback queued on the event loop holds
+    # a reference. Additionally, garbage collection via reference
+    # counting only takes place after at least one done/then callback
+    # is placed on the event queue, not before. Else promises that
+    # are immediately resolved on construction would be freed right
+    # away before the application even gets a chance to call done/then.
+    variable _nrefs
+    
     constructor {cmd} {
         set _state PENDING
         set _handlers [list ]
-
+        set _nrefs 0
+        set _at_least_one_handler_run 0
+        
         # Errors in the construction command are returned via
         # the standard mechanism of reject.
         if {[catch {
@@ -59,6 +76,21 @@ oo::class create promise::Promise {
             error "Value is not set."
         }
         return $_value
+    }
+
+    method ref {} {
+        incr _nrefs
+    }
+
+    method unref {} {
+        incr _nrefs -1
+        my GC
+    }
+    
+    method GC {} {
+        if {$_nrefs <= 0 && [llength $_handlers] == 0} {
+            my destroy
+        }
     }
     
     method ResolveAttached {value} {
@@ -123,10 +155,12 @@ oo::class create promise::Promise {
     # Internal method to queue all registered handlers based on
     # whether the promise is succesfully fulfilled or not
     method ScheduleHandlers {} {
-        if {$_state ni {FULFILLED REJECTED}} {
-            # Promise is not settled.
+        if {$_state ni {FULFILLED REJECTED} || [llength $_handlers] == 0 } {
+            # Promise is not settled or no handlers registered
             return
         }
+
+        set _at_least_one_handler_run 1; # Needed for garbage collection
         if {$_state eq "FULFILLED"} {
             set ix 0
         } else {
@@ -136,11 +170,12 @@ oo::class create promise::Promise {
         foreach pair $_handlers {
             set cmd [lindex $pair $ix]
             if {[llength $cmd]} {
-                #TBD - enqueue the callback via the event loop passing $_value
+                # Enqueue the callback via the event loop passing $_value
                 after 0 [list after idle [linsert $cmd end $_value]]
             }
         }
         set _handlers [list ]
+        my GC
         return 
     }        
 
