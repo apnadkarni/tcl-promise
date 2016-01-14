@@ -59,7 +59,7 @@ oo::class create promise::Promise {
         #  operation.
         # The command prefix $cmd is passed an additional argument - the
         # name of this Promise object. It should arrange for one of the
-        # object's settle methods [resolve], [resolve_with_promise] or
+        # object's settle methods [fulfill], [resolve_with_promise] or
         # [reject] to be called when the operation completes.
         
         set _state PENDING
@@ -124,7 +124,7 @@ oo::class create promise::Promise {
         }
     }
     
-    method ResolveAttached {value} {
+    method FulfillAttached {value} {
         if {$_state ne "ATTACHED"} {
             return
         }
@@ -145,7 +145,7 @@ oo::class create promise::Promise {
     }
     
     # Method to invoke to fulfil a promise with a value or another promise.
-    method resolve {value} {
+    method fulfill {value} {
         if {$_state ne "PENDING"} {
             return 0;             # Already settled
         }
@@ -161,7 +161,7 @@ oo::class create promise::Promise {
             return 0;             # Already settled
         }
         if {[catch {
-            $promise done [namespace code {my ResolveAttached}] [namespace code {my RejectAttached}]
+            $promise done [namespace code {my FulfillAttached}] [namespace code {my RejectAttached}]
         } msg edict]} {
             my reject [list $msg $edict]
         } else {
@@ -228,13 +228,13 @@ oo::class create promise::Promise {
 }
 
 proc promise::_then_handler {target_promise status cmd value} {
-    # Run the specified command and resolve/reject the target promise
+    # Run the specified command and fulfill/reject the target promise
     # accordingly. If the command is empty, the passed-in value is passed
     # on to the target promise.
 
     # IMPORTANT!!!!
     # MUST BE CALLED FROM EVENT LOOP AT so info level must be 1. Else
-    # promise::resolve/reject will not work
+    # promise::fulfill/reject will not work
     # Also, Do NOT change the param name target_promise without changing
     # those procs.
     # Oh what a hack to get around lack of closures. Alternative would have
@@ -248,7 +248,7 @@ proc promise::_then_handler {target_promise status cmd value} {
     
     if {[llength $cmd] == 0} {
         switch -exact -- $status {
-            FULFILLED { $target_promise resolve $value }
+            FULFILLED { $target_promise fulfill $value }
             REJECTED  { $target_promise reject $value }
             ATTACHED -
             PENDING  -
@@ -257,7 +257,7 @@ proc promise::_then_handler {target_promise status cmd value} {
             }
         }
     } else {
-        # Invoke the real handler code and resolve/reject the target promise.
+        # Invoke the real handler code and fulfill/reject the target promise.
         # Not the handler code may have called one of the promise::then_*
         # commands itself in which case these calls will be no-ops.
         # TBD - ideally we would like to execute at global level. However
@@ -266,21 +266,21 @@ proc promise::_then_handler {target_promise status cmd value} {
         if {[catch [linsert $cmd end $value] value edict]} {
             $target_promise reject [list $value $edict]
         } else {
-            $target_promise resolve $value
+            $target_promise fulfill $value
         }
     }
     return
 }
 
-proc promise::then_resolve {value} {
+proc promise::then_fulfill {value} {
     # TBD - what if someone calls this from within a uplevel #0 ? The
     # upvar will be all wrong
     upvar #1 target_promise target_promise
     if {![info exists target_promise]} {
-        set msg "promise::then_resolve called in invalid context."
+        set msg "promise::then_fulfill called in invalid context."
         throw [list PROMISE THEN FULFILL NOTARGET $msg] $msg
     }
-    $target_promise resolve $value
+    $target_promise fulfill $value
 }
 
 proc promise::then_promise {promise} {
@@ -302,19 +302,19 @@ proc promise::then_reject {errval} {
 }
 
 proc promise::all {promises} {
-    # Returns a promise that resolves or rejects when all promises
-    # in the $promises argument have resolved or any one has rejected
+    # Returns a promise that fulfills or rejects when all promises
+    # in the $promises argument have fulfilled or any one has rejected
     # promises - a list of Promise objects
     #
     # If any of $promises rejects, then the promise returned by the
     # command will reject with the same value. Otherwise, the promise
-    # will resolve when all promises have resolved.
+    # will fulfill when all promises have fulfilled.
     # The resolved value will be a list of the resolved
     # values of the contained promises.
     
     set all_promise [Promise new [lambda {promises prom} {
         if {[llength $promises] == 0} {
-            $prom resolve {}
+            $prom fulfill {}
             return
         }
 
@@ -328,8 +328,8 @@ proc promise::all {promises} {
 }
 
 proc promise::all* args {
-    # Returns a promise that resolves or rejects when all promises
-    # in the $args argument have resolved or any one has rejected
+    # Returns a promise that fulfills or rejects when all promises
+    # in the $args argument have fulfilled or any one has rejected
     # args - list of Promise objects
     # This command is identical to the all command except that it takes
     # multiple arguments, each of which is a Promise object. See [all]
@@ -340,10 +340,10 @@ proc promise::all* args {
 # Callback for promise::all.
 #  all_promise - the "master" promise returned by the all call.
 #  remaining_promises - the list of remaining promises still to be resolved.
-#  values - values collected so far from resolved promises
+#  values - values collected so far from fulfilled promises
 #  resolution - whether the current promise was resolved with "FULFILLED"
 #   or "REJECTED"
-#  value - the value of the currently resolved promise or error description
+#  value - the value of the currently fulfilled promise or error description
 #   in case rejected
 proc promise::_all_helper {all_promise remaining_promises values resolution value} {
     # TBD - this does not seem the best way to do this. In particular,
@@ -362,7 +362,7 @@ proc promise::_all_helper {all_promise remaining_promises values resolution valu
     lappend values $value
     if {[llength $remaining_promises] == 0} {
         # No more promises left. All done.
-        $all_promise resolve $values
+        $all_promise fulfill $values
         return
     }
 
@@ -379,18 +379,18 @@ proc promise::_all_helper {all_promise remaining_promises values resolution valu
 }
 
 proc promise::race {promises} {
-    # Returns a promise that resolves or rejects when any promise
-    # in the $promises argument is resolved or rejected
+    # Returns a promise that fulfills or rejects when any promise
+    # in the $promises argument is fulfilled or rejected
     #   promises - a list of Promise objects
-    # The returned promise will resolve and reject with the same value
-    # as the first promise in $promises that resolves or rejects.
+    # The returned promise will fulfill and reject with the same value
+    # as the first promise in $promises that fulfills or rejects.
     set race_promise [Promise new [lambda {promises prom} {
         if {[llength $promises] == 0} {
             $prom reject [_make_errval PROMISE RACE EMPTYSET "Promise set is empty"]
             return
         }
         foreach promise $promises {
-            $promise done [list $prom resolve] [list $prom reject]
+            $promise done [list $prom fulfill] [list $prom reject]
         }
     } $promises]]
 
@@ -398,8 +398,8 @@ proc promise::race {promises} {
 }
 
 proc promise::race* {args} {
-    # Returns a promise that resolves or rejects when any promise
-    # in the passed arguments is resolved or rejected
+    # Returns a promise that fulfills or rejects when any promise
+    # in the passed arguments is fulfilled or rejected
     #   args - list of Promise objects
     # This command is identical to the all command except that it takes
     # multiple arguments, each of which is a Promise object. See [race]
@@ -411,15 +411,24 @@ proc promise::_make_errval {args} {
     catch {throw $args [lindex $args end]} msg edict
     return [list $msg $edict]
 }
-                            
+
 proc promise::pgeturl {url args} {
+    # Returns a promise that will be fulfilled when the specified URL is fetched
+    #   url - the URL to fetch
+    #   args - arguments to pass to the 'http::geturl' command
+    # This command invokes the asynchronous form of the 'http::geturl' command
+    # of the 'http' package. If the operation completes with a status of
+    # 'ok', the returned promise is fulfilled with the contents of the
+    # http state array (see the documentation of http::geturl). If the
+    # the status is anything else, the promise is rejected, again with
+    # the contents of the http state array.
     uplevel #0 {package require http}
     proc [namespace current]::pgeturl {url args} {
         set prom [promise::Promise new [lambda {http_args prom} {
             http::geturl {*}$http_args -command [promise::lambda {prom tok} {
                 upvar #0 $tok http_state
                 if {$http_state(status) eq "ok"} {
-                    $prom resolve [array get http_state]
+                    $prom fulfill [array get http_state]
                 } else {
                     $prom reject [array get http_state]
                 }
@@ -431,24 +440,52 @@ proc promise::pgeturl {url args} {
     tailcall pgeturl $url {*}$args
 }
 
-proc promise::ptimer {delay {value "Timer expired."}} {
-    return [promise::Promise new [lambda {delay prom} {
-        after $delay [list $prom resolve $value]
-    } $delay]]
+proc promise::ptimer {millisecs {value "Timer expired."}} {
+    # Returns a promise that will be fulfilled when the specified time has
+    # elapsed
+    #  millisecs - time interval in milliseconds
+    #  value - the value with which the promise is to be fulfilled
+    # In case of errors (e.g. if $milliseconds is not an integer), the
+    # promise is rejected with an error value consisting of the error message
+    # and an error dictionary.
+    # Also see [ptimeout] which is similar but rejects the promise instead
+    # of fulfilling it.
+    return [promise::Promise new [lambda {millisecs prom} {
+        after $millisecs [list $prom fulfill $value]
+    } $millisecs]]
 }
 
-proc promise::ptimeout {delay {value "Operation timed out."}} {
-    return [promise::Promise new [lambda {delay prom} {
-        after $delay [list $prom reject $value]
-    } $delay]]
+proc promise::ptimeout {millisecs {value "Operation timed out."}} {
+    # Returns a promise that will be rejected when the specified time has
+    # elapsed
+    #  millisecs - time interval in milliseconds
+    #  value - the value with which the promise is to be rejected
+    # In case of errors (e.g. if $milliseconds is not an integer), the
+    # promise is rejected with an error value consisting of the error message
+    # and an error dictionary.
+    # Also see [ptimer] which is similar but fulfills the promise instead
+    # of rejecting it.
+    return [promise::Promise new [lambda {millisecs prom} {
+        after $millisecs [list $prom reject $value]
+    } $millisecs]]
 }
 
 proc promise::pconnect {args} {
+    # Returns a promise that will be fulfilled when the a socket connection
+    # is completed
+    #  args - arguments to be passed to the Tcl 'socket' command
+    # This is a wrapper for the async version of the Tcl 'socket' command.
+    # If the connection completes, the promise is fulfilled with the
+    # socket handle.
+    # In case of errors (e.g. if the address cannot be fulfilled), the
+    # promise is rejected with an error value consisting of the error message
+    # and an error dictionary.
+    # 
     return [Promise new [lambda {so_args prom} {
         set so [socket -async {*}$so_args]
-        fileevent $so writable [promise::lambda {prom so args} {
+        fileevent $so writable [promise::lambda {prom so} {
             fileevent $so writable {}
-            $prom resolve [linsert $args 0 $so]
+            $prom fulfill $so
         } $prom $so]
     } $args]]
 }
@@ -477,6 +514,16 @@ proc promise::_read_channel {prom chan data} {
 }
 
 proc promise::pexec {args} {
+    # Runs an external program and returns a promise for its output
+    # a promise for the script results
+    #  args - program and its arguments as passed to the Tcl 'open' call
+    #    for creating pipes
+    # If the program runs without errors, the promise is fulfilled by its
+    # standard output content. Otherwise the promise is rejected with
+    # an error value consisting of an error message and dictionary
+    # detailing the failure.
+    #
+    # Returns a promise that will be settled by the result of the program
     return [Promise new [lambda {open_args prom} {
         set chan [open |$open_args r]
         fconfigure $chan -blocking 0
@@ -491,7 +538,7 @@ proc promise::_settle {prom code result {edict {}}} {
     }
     if {$code == 0} {
         # OK
-        $prom resolve $result
+        $prom fulfill $result
     } else {
         # TBD - how should codes other than 1 (error) be handled?
         $prom reject [list $result $edict]
@@ -500,12 +547,12 @@ proc promise::_settle {prom code result {edict {}}} {
         
 proc promise::ptask {script} {
     # Creates a new Tcl thread to run the specified script and returns
-    # a promise for it
+    # a promise for the script results
     #   script - script to run in the thread
     # Returns a promise that will be settled by the result of the script
     #
     # The `ptask` command runs the specified script in a new Tcl
-    # thread. The promise returned from this command will be resolved
+    # thread. The promise returned from this command will be fulfilled
     # with the result of the script if it completes
     # successfully. Otherwise, the promise will be rejected with an
     # error value that is a pair containing the error message and
@@ -534,7 +581,7 @@ proc promise::pworker {tpool script} {
     # The Thread package allows creation of a thread pool
     # with the 'tpool create' command. The `pworker` command runs the
     # specified script in a worker thread from a thread pool. The promise
-    # returned from this command will be resolved with the
+    # returned from this command will be fulfilled with the
     # result of the script if it completes successfully. Otherwise,
     # the promise will be rejected with an error value that is a pair
     # containing the error message and error dictionary from the script
@@ -636,7 +683,7 @@ if {0} {
         set prom [promise::Promise new [promise::lambda {url prom} {
             http::geturl $url -method HEAD -command [promise::lambda {prom tok} {
                 upvar #0 $tok http_state
-                $prom resolve [list $http_state(url) $http_state(status)]
+                $prom fulfill [list $http_state(url) $http_state(status)]
                 ::http::cleanup $tok
             } $prom]
         } $url]]
