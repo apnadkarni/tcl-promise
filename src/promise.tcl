@@ -487,3 +487,21 @@ if {0} {
 }
 
 package provide promise [promise::version]
+
+if {[info exists ::argv0] &&
+    [file tail [info script]] eq [file tail $::argv0]} {
+    switch -glob -- [lindex $::argv 0] {
+        ver* { puts [promise::version] }
+        tm -
+        dist* {
+            if {[file extension [info script]] ne ".tm"} {
+                file copy -force [info script] [file rootname [info script]]-[promise::version].tm
+            } else {
+                error "Cannot create distribution from a .tm file"
+            }
+        }
+        default {
+            error "Unknown option/command \"[lindex $::argv 0]\""
+        }
+    }
+}
