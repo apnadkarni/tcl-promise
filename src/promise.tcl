@@ -1,8 +1,28 @@
-#
 # Copyright (c) 2015, Ashok P. Nadkarni
 # All rights reserved.
-#
-# See the file license.terms for license
+
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+
+# 1. Redistributions of source code must retain the above copyright
+# notice, this list of conditions and the following disclaimer.
+
+# 2. Redistributions in binary form must reproduce the above copyright
+# notice, this list of conditions and the following disclaimer in the
+# documentation and/or other materials provided with the distribution.
+
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace eval promise {
     proc version {} { return 1.0a0 }
@@ -797,173 +817,6 @@ proc promise::pworker {tpool script} {
     } $tpool $script]]
 }
 
-proc promise::_document_self {path args} {
-    # Generates documentation for the package in HTML format.
-    # path - path to the output file
-
-    package require ruff
-
-    set introduction [list Introduction [ruff::extract_docstring {
-        This package implements the 'promise' abstraction for
-        asynchronous programming. This document is the reference for
-        commands and classes implemented by the package. For a
-        tutorial introduction to promises, usage guide and examples, see
-        http://www.magicsplat.com/blog/promises.
-    }]]
-
-    lappend docs {Promises} {
-        The promise abstraction encapsulates the eventual result of a
-        possibly asynchronous operation.
-
-        This package follows the terminology used in the Javascript world,
-        in particular the ECMAScript 2015 Language specification though
-        details of implementation differ.
-        
-        From an application's perspective, a [Promise] object may be in one
-        of three states:
-
-        - 'FULFILLED'
-        - 'REJECTED'
-        - 'PENDING', if it is neither of the above
-
-        Though the above specification does not explicitly assign meanings
-        to these states, in practice 'FULFILLED' and 'REJECTED' are associated
-        with successful and failed completion of the operation respectively
-        while 'PENDING' reflects the operation has not completed.
-
-        Some additional terms:
-
-        A promise is said to be settled if it is either in the 'FULFILLED'
-        or 'REJECTED' s state. A promise that is settled will thereafter never
-        change state.
-
-        A promise is said to be resolved if it is settled or if it
-        is attached to the state of another promise.
-
-        In this package, the [::promise::Promise] class implements promises.
-    } {Constructing promises} {
-        Promises are constructed by creating instances of the
-        [::promise::Promise] class. The constructor is passed a script
-        that should initiate an asynchronous operation and at some point
-        (immediately or in the future) settle the promise by calling
-        its [fulfill] or [reject] method. Here is a simple example
-        of creating a timer based promise
-        (the implementation of the [ptimer] command).
-
-            return [promise::Promise new [lambda {millisecs value prom} {
-                after $millisecs [list $prom fulfill $value]
-            } 1000 "Timed out"]]
-
-        The package includes several commands for constructing promises
-        for common operations. These are layered on top
-        of [Promise] and are present for convenience.
-        Note these are all asynchronous in nature.
-
-        [pconnect] - establishes a socket client connection
-        [pexec] - runs an external program collecting its output
-        [pgeturl] - retrieves a URL using the [http] package
-        [ptask] - runs a script in a separate Tcl thread
-        [ptimeout] - rejects a promise when a timer expires
-        [ptimer] - fulfills sa promise when a timer expires
-        [pworker] - runs a script in a Tcl thread pool
-        
-    } {Settling promises} {
-        When the asynchronous code associated with a promise completes,
-        either successfully or with an error, it has to update the
-        promise with the result value. On a successful completion,
-        the [Promise] object's [Promise.fulfill] method should be called.
-        Likewise, on an error or unsuccessful completion, the [Promise.reject]
-        method should be invoked. In both cases, the value with which
-        the promise should be fulfilled (or rejected) should be passed
-        to the method.
-
-        In the preceding example, the 'after' callback settles the
-        promise by calling its 'fulfill' method.
-
-            $prom fulfill $value
-    } {Resolution handlers} {
-        An application will generally register handlers to be called
-        (asynchronously of course) when the promise is settled. In the
-        simplest case, the handlers are registered with the [Promise.done]
-        method. In our example above, calling
-        
-            $prom done puts
-
-        would print
-        
-            Timed out
-
-        when the promise was fulfilled by the 'after' callback.
-
-        The 'done' method may be called multiple times and each
-        handler registered through it will be run when the promise
-        is settled.
-    } {Chaining promises} {
-        In more complex scenarios, the application may wish to take
-        additional asynchronous actions when one is completed. In this
-        case, it can make use of the [Promise.then] method instead of,
-        or in addition to, the 'done' method. For example, if
-        we wanted to run another timer after the first one completes,
-        the following code would do the job. Here we use the
-        convenience [timer] command to illustrate.
-
-            set prom1 [promise::ptimer 1000 "Timer 1 expired"]
-            set prom2 [$prom1 then [lambda {value} {
-                puts $value
-                promise::then_chain [promise::ptimer 2000 "Timer 2 expired"]
-            }]]
-            $prom2 done puts
-                   
-        After the first timer is settled, the handler registered by
-        the [then] method is run. This chains another promise based
-        on a second timer. You should see
-        
-            Timer 1 expired
-            Timer 2 expired
-
-        about 2 seconds apart.
-    } {Combining promises} {        
-        One of the biggest benefits of promises stems from the ability
-        to easily combine them.
-
-        You can initiate multiple asynchronous operations and then
-        use the [all] or [all*] commands to
-        schedule an action to be taken when on all of them to complete.
-        
-        Conversely, you can use the [race] or [race*] commands to schedule
-        an action to be taken when any one of several operations completes.
-        
-    } {Cleaning up} {
-        TclOO objects are not garbage collected and have to be explicitly
-        destroyed. In the case of promises, because of their asynchronous
-        nature, it is often not clear to applications when the promise
-        objects should be destroyed.
-
-        Therefore the package internally manages the lifetime of Promise
-        objects such that they are automatically destroyed once they are
-        settled and at least one fulfillment or rejection handler has been
-        run. This removes the burden from the application in the most common
-        usage scenarios. In cases where the application wants the object to
-        persist, for example, when the resolved value is accessed multiple
-        times, it can use the 'ref' and 'unref' methods of a
-        [::promise::Promise] object to explicitly manage its lifetime.
-        
-    }
-    
-    foreach {title docstring} $docs {
-        lappend doclist $title [ruff::extract_docstring $docstring]
-    }
-    ::ruff::document_namespaces html [namespace current] \
-        -includesource true \
-        -autolink false \
-        -recurse true \
-        -output $path \
-        -titledesc "promise (V[version])" \
-        -copyright "[clock format [clock seconds] -format %Y] Ashok P. Nadkarni" \
-        {*}$args \
-        -preamble [dict create :: $introduction ::promise $doclist]
-}
-
 if {0} {
     package require http
     proc checkurl {url} {
@@ -1003,9 +856,6 @@ if {[info exists ::argv0] &&
             } else {
                 error "Cannot create distribution from a .tm file"
             }
-        }
-        doc* {
-            promise::_document_self promise-[promise::version].html
         }
         default {
             error "Unknown option/command \"[lindex $::argv 0]\""
