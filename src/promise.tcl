@@ -536,8 +536,10 @@ proc promise::race {promises} {
             $prom reject [_make_errval PROMISE RACE EMPTYSET "Promise set is empty"]
             return
         }
+        # Use safe_*, do not directly call methods since $prom may be
+        # gc'ed once settled
         foreach promise $promises {
-            $promise done [list $prom fulfill] [list $prom reject]
+            $promise done [list ::promise::safe_fulfill $prom ] [list ::promise::safe_reject $prom]
         }
     } $promises]]
 
@@ -597,9 +599,9 @@ proc promise::ptimer {millisecs {value "Timer expired."}} {
     # and an error dictionary.
     # Also see [ptimeout] which is similar but rejects the promise instead
     # of fulfilling it.
-    return [promise::Promise new [lambda {millisecs prom} {
+    return [promise::Promise new [lambda {millisecs value prom} {
         after $millisecs [list $prom fulfill $value]
-    } $millisecs]]
+    } $millisecs $value]]
 }
 
 proc promise::ptimeout {millisecs {value "Operation timed out."}} {
@@ -612,9 +614,9 @@ proc promise::ptimeout {millisecs {value "Operation timed out."}} {
     # and an error dictionary.
     # Also see [ptimer] which is similar but fulfills the promise instead
     # of rejecting it.
-    return [promise::Promise new [lambda {millisecs prom} {
+    return [promise::Promise new [lambda {millisecs value prom} {
         after $millisecs [list $prom reject $value]
-    } $millisecs]]
+    } $millisecs $value]]
 }
 
 proc promise::pconnect {args} {
@@ -654,9 +656,9 @@ proc promise::_read_channel {prom chan data} {
         close $chan
     } result edict]
     if {$code} {
-        _settle $prom $code $result $edict
+        safe_reject $prom [list $result $edict]
     } else {
-        _settle $prom 0 $data
+        safe_fulfill $prom $data
     }
 }
 
@@ -678,20 +680,38 @@ proc promise::pexec {args} {
     } $args]]
 }        
 
-proc promise::_settle {prom code result {edict {}}} {
+proc promise::safe_fulfill {prom value} {
+    # Fulfills the specified promise
+    #  prom - the promise to be fulfilled
+    #  value - the fulfillment value
+    # This is a convenience command that checks if $prom still exists
+    # and if so fulfills it with $value.
+    #
+    # Returns 0 if the promise does not exist any more, else the return
+    # value from its [fulfill] method.
+    if {![info object isa object $prom]} {
+        # The object has been deleted. Naught to do
+        return 0
+    }
+    return [$prom fulfill $result]
+}
+
+proc promise::safe_reject {prom errval} {
+    # Rejects the specified promise
+    #  prom - the promise to be fulfilled
+    #  errval - the value to use for rejecting
+    # This is a convenience command that checks if $prom still exists
+    # and if so rejects it with $errval.
+    #
+    # Returns 0 if the promise does not exist any more, else the return
+    # value from its [reject] method.
     if {![info object isa object $prom]} {
         # The object has been deleted. Naught to do
         return
     }
-    if {$code == 0} {
-        # OK
-        $prom fulfill $result
-    } else {
-        # TBD - how should codes other than 1 (error) be handled?
-        $prom reject [list $result $edict]
-    }
+    $prom reject $result
 }
-        
+
 proc promise::ptask {script} {
     # Creates a new Tcl thread to run the specified script and returns
     # a promise for the script results
@@ -711,7 +731,12 @@ proc promise::ptask {script} {
     proc [namespace current]::ptask script { 
         return [Promise new [lambda {script prom} {
             set thread_script [string map [list %PROM% $prom %TID% [thread::id] %SCRIPT% $script] {
-                thread::send -async %TID% [list ::promise::_settle %PROM% [catch {%SCRIPT%} result edict] $result $edict]
+                if {[catch {%SCRIPT%} result edict]} {
+                    set response [list ::promise::safe_reject %PROM% [list $result $edict]]
+                } else {
+                    set response [list ::promise::safe_fulfill %PROM% $result]
+                }
+                thread::send -async %TID% $response
             }]
             thread::create $thread_script
         } $script]]
@@ -720,7 +745,8 @@ proc promise::ptask {script} {
 }
 
 proc promise::pworker {tpool script} {
-    # Runs a script in a worker thread from a thread pool and returns a promise for the same
+    # Runs a script in a worker thread from a thread pool and
+    # returns a promise for the same
     #   tpool - thread pool identifier
     #   script - script to run in the worker thread
     # Returns a promise that will be settled by the result of the script
@@ -738,7 +764,12 @@ proc promise::pworker {tpool script} {
     # us, Thread must already be loaded
     return [Promise new [lambda {tpool script prom} {
         set thread_script [string map [list %PROM% $prom %TID% [thread::id] %SCRIPT% $script] {
-            thread::send -async %TID% [list ::promise::_settle %PROM% [catch {%SCRIPT%} result edict] $result $edict]
+            if {[catch {%SCRIPT%} result edict]} {
+                set response [list ::promise::safe_reject %PROM% [list $result $edict]]
+            } else {
+                set response [list ::promise::safe_fulfill %PROM% $result]
+            }
+            thread::send -async %TID% $response
         }]
         tpool::post -detached -nowait $tpool $thread_script
     } $tpool $script]]
@@ -751,7 +782,7 @@ proc promise::_document_self {path args} {
     package require ruff
 
     set intro {
-        This package implements the *promise* abstraction for
+        This package implements the 'promise' abstraction for
         asynchronous programming. This document is the reference for
         commands and classes implemented by the package. For a
         tutorial introduction to promises, usage guide and examples, see
@@ -766,7 +797,7 @@ proc promise::_document_self {path args} {
         in particular the ECMAScript 2015 Language specification though
         details of implementation differ.
         
-        From an application's perspective, a Promise object may be in one
+        From an application's perspective, a [Promise] object may be in one
         of three states:
 
         - FULFILLED
