@@ -8,8 +8,18 @@ namespace eval promise {
     proc version {} { return 0.2 }
 }
 
-proc promise::lambda {arguments body args} {
-    return [list ::apply [list $arguments $body] {*}$args]
+proc promise::lambda {params body args} {
+    # Creates an anonymous procedure and returns a command prefix for it
+    #   params - parameter definitions for the procedure
+    #   body - body of the procedures
+    #   args - additional arguments to be passed to the procedure when it
+    #     is invoked
+    #
+    # This is just a convenience command since anonymous procedures are
+    # commonly useful with promises. The 'lambda' package from 'tcllib'
+    # is identical in function.
+
+    return [list ::apply [list $params $body] {*}$args]
 }
 
 # Credits:
@@ -178,7 +188,8 @@ oo::class create promise::Promise {
         # Returns '0' if promise had already been settled and '1' otherwise.
 
         #ruff
-        # If the promise has already been settled, the method has no effect.
+        # If the promise on which this method is called
+        # has already been settled, the method has no effect.
         if {$_state ne "PENDING"} {
             return 0;
         }
@@ -564,11 +575,11 @@ proc promise::_make_errval {args} {
 proc promise::pgeturl {url args} {
     # Returns a promise that will be fulfilled when the specified URL is fetched
     #   url - the URL to fetch
-    #   args - arguments to pass to the 'http::geturl' command
-    # This command invokes the asynchronous form of the 'http::geturl' command
+    #   args - arguments to pass to the [http::geturl] command
+    # This command invokes the asynchronous form of the [http::geturl] command
     # of the 'http' package. If the operation completes with a status of
     # 'ok', the returned promise is fulfilled with the contents of the
-    # http state array (see the documentation of http::geturl). If the
+    # http state array (see the documentation of [http::geturl]). If the
     # the status is anything else, the promise is rejected, again with
     # the contents of the http state array.
     uplevel #0 {package require http}
@@ -599,6 +610,7 @@ proc promise::ptimer {millisecs {value "Timer expired."}} {
     # and an error dictionary.
     # Also see [ptimeout] which is similar but rejects the promise instead
     # of fulfilling it.
+
     return [promise::Promise new [lambda {millisecs value prom} {
         after $millisecs [list $prom fulfill $value]
     } $millisecs $value]]
@@ -614,6 +626,7 @@ proc promise::ptimeout {millisecs {value "Operation timed out."}} {
     # and an error dictionary.
     # Also see [ptimer] which is similar but fulfills the promise instead
     # of rejecting it.
+
     return [promise::Promise new [lambda {millisecs value prom} {
         after $millisecs [list $prom reject $value]
     } $millisecs $value]]
@@ -664,7 +677,6 @@ proc promise::_read_channel {prom chan data} {
 
 proc promise::pexec {args} {
     # Runs an external program and returns a promise for its output
-    # a promise for the script results
     #  args - program and its arguments as passed to the Tcl 'open' call
     #    for creating pipes
     # If the program runs without errors, the promise is fulfilled by its
@@ -781,15 +793,15 @@ proc promise::_document_self {path args} {
 
     package require ruff
 
-    set intro {
+    set introduction [list Introduction [ruff::extract_docstring {
         This package implements the 'promise' abstraction for
         asynchronous programming. This document is the reference for
         commands and classes implemented by the package. For a
         tutorial introduction to promises, usage guide and examples, see
         http://www.magicsplat.com/blog/promises.
-    }
+    }]]
 
-    set abstraction {
+    set abstraction [list {The promise abstraction} [ruff::extract_docstring {
         The promise abstraction encapsulates the eventual result of a
         possibly asynchronous operation.
 
@@ -819,9 +831,24 @@ proc promise::_document_self {path args} {
         is attached to the state of another promise.
 
         In this package, the [::promise::Promise] class implements promises.
-    }
-    
-    set gc {
+    }]]
+
+    set construction [list {Constructing promises} [ruff::extract_docstring {
+        Promises are constructed by creating instances of the
+        [::promise::Promise] class. The constructor is passed a script
+        that should initiate an asynchronous operation and at some point
+        (immediately or in the future) settle the promise by calling
+        its [fulfill] or [reject] method. Here is a simple example
+        of creating a timer based promise
+        (the implementation of the [ptimer] command).
+
+            return [promise::Promise new [lambda {millisecs value prom} {
+                after $millisecs [list $prom fulfill $value]
+            } 1000 "Timed out"]]
+    }]]
+
+
+    set gc [list {Garbage Collection} [ruff::extract_docstring {
         TclOO objects are not garbage collected and have to be explicitly
         destroyed. In the case of promises, because of their asynchronous
         nature, it is often not clear to applications when the promise
@@ -836,9 +863,11 @@ proc promise::_document_self {path args} {
         times, it can use the 'ref' and 'unref' methods of a
         [::promise::Promise] object to explicitly manage its lifetime.
         
-    }
+    }]]
     
+    set dlist [concat $abstraction $construction $gc]
     ::ruff::document_namespaces html [namespace current] \
+        -includesource true \
         -autolink false \
         -recurse true \
         -output $path \
@@ -846,11 +875,9 @@ proc promise::_document_self {path args} {
         -copyright "[clock format [clock seconds] -format %Y] Ashok P. Nadkarni" \
         {*}$args \
         -preamble [dict create :: \
-                       [list \
-                            Introduction [::ruff::extract_docstring $intro] \
-                            {The promise abstraction} [::ruff::extract_docstring $abstraction] \
-                            {Garbage collection} [::ruff::extract_docstring $gc] \
-                           ]]
+                       [list {*}$introduction] \
+                       ::promise \
+                       $dlist]
 }
 
 if {0} {
