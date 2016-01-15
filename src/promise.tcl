@@ -5,7 +5,7 @@
 # See the file license.terms for license
 
 namespace eval promise {
-    proc version {} { return 0.2 }
+    proc version {} { return 1.0a0 }
 }
 
 proc promise::lambda {params body args} {
@@ -737,6 +737,11 @@ proc promise::ptask {script} {
     # error value that is a pair containing the error message and
     # error dictionary from the script failure.
     #
+    # Note that $script is a standalone script in that it is executed
+    # in a new thread with a virgin Tcl interpreter. Any packages used
+    # by $script have to be explicitly loaded, variables defined in the
+    # the current interpreter will not be available in $script and so on.
+    #
     # The command requires the Thread package to be loaded.
 
     uplevel #0 package require Thread
@@ -771,6 +776,11 @@ proc promise::pworker {tpool script} {
     # the promise will be rejected with an error value that is a pair
     # containing the error message and error dictionary from the script
     # failure.
+    #
+    # Note that $script is a standalone script in that it is executed
+    # in a new thread with a virgin Tcl interpreter. Any packages used
+    # by $script have to be explicitly loaded, variables defined in the
+    # the current interpreter will not be available in $script and so on.
 
     # No need for package require Thread since if tpool is passed to
     # us, Thread must already be loaded
@@ -801,7 +811,7 @@ proc promise::_document_self {path args} {
         http://www.magicsplat.com/blog/promises.
     }]]
 
-    set abstraction [list {The promise abstraction} [ruff::extract_docstring {
+    lappend docs {Promises} {
         The promise abstraction encapsulates the eventual result of a
         possibly asynchronous operation.
 
@@ -812,28 +822,26 @@ proc promise::_document_self {path args} {
         From an application's perspective, a [Promise] object may be in one
         of three states:
 
-        - FULFILLED
-        - REJECTED
-        - PENDING, if it is neither of the above
+        - 'FULFILLED'
+        - 'REJECTED'
+        - 'PENDING', if it is neither of the above
 
         Though the above specification does not explicitly assign meanings
-        to these states, in practice FULFILLED and REJECTED are associated
+        to these states, in practice 'FULFILLED' and 'REJECTED' are associated
         with successful and failed completion of the operation respectively
-        while PENDING reflects the operation has not completed.
+        while 'PENDING' reflects the operation has not completed.
 
         Some additional terms:
 
-        A promise is said to be settled if it is either in the FULFILLED
-        or REJECTED state. A promise that is settled will thereafter never
+        A promise is said to be settled if it is either in the 'FULFILLED'
+        or 'REJECTED' s state. A promise that is settled will thereafter never
         change state.
 
         A promise is said to be resolved if it is settled or if it
         is attached to the state of another promise.
 
         In this package, the [::promise::Promise] class implements promises.
-    }]]
-
-    set construction [list {Constructing promises} [ruff::extract_docstring {
+    } {Constructing promises} {
         Promises are constructed by creating instances of the
         [::promise::Promise] class. The constructor is passed a script
         that should initiate an asynchronous operation and at some point
@@ -845,10 +853,87 @@ proc promise::_document_self {path args} {
             return [promise::Promise new [lambda {millisecs value prom} {
                 after $millisecs [list $prom fulfill $value]
             } 1000 "Timed out"]]
-    }]]
 
+        The package includes several commands for constructing promises
+        for common operations. These are layered on top
+        of [Promise] and are present for convenience.
+        Note these are all asynchronous in nature.
 
-    set gc [list {Garbage Collection} [ruff::extract_docstring {
+        [pconnect] - establishes a socket client connection
+        [pexec] - runs an external program collecting its output
+        [pgeturl] - retrieves a URL using the [http] package
+        [ptask] - runs a script in a separate Tcl thread
+        [ptimeout] - rejects a promise when a timer expires
+        [ptimer] - fulfills sa promise when a timer expires
+        [pworker] - runs a script in a Tcl thread pool
+        
+    } {Settling promises} {
+        When the asynchronous code associated with a promise completes,
+        either successfully or with an error, it has to update the
+        promise with the result value. On a successful completion,
+        the [Promise] object's [Promise.fulfill] method should be called.
+        Likewise, on an error or unsuccessful completion, the [Promise.reject]
+        method should be invoked. In both cases, the value with which
+        the promise should be fulfilled (or rejected) should be passed
+        to the method.
+
+        In the preceding example, the 'after' callback settles the
+        promise by calling its 'fulfill' method.
+
+            $prom fulfill $value
+    } {Resolution handlers} {
+        An application will generally register handlers to be called
+        (asynchronously of course) when the promise is settled. In the
+        simplest case, the handlers are registered with the [Promise.done]
+        method. In our example above, calling
+        
+            $prom done puts
+
+        would print
+        
+            Timed out
+
+        when the promise was fulfilled by the 'after' callback.
+
+        The 'done' method may be called multiple times and each
+        handler registered through it will be run when the promise
+        is settled.
+    } {Chaining promises} {
+        In more complex scenarios, the application may wish to take
+        additional asynchronous actions when one is completed. In this
+        case, it can make use of the [Promise.then] method instead of,
+        or in addition to, the 'done' method. For example, if
+        we wanted to run another timer after the first one completes,
+        the following code would do the job. Here we use the
+        convenience [timer] command to illustrate.
+
+            set prom1 [promise::ptimer 1000 "Timer 1 expired"]
+            set prom2 [$prom1 then [lambda {value} {
+                puts $value
+                promise::then_chain [promise::ptimer 2000 "Timer 2 expired"]
+            }]]
+            $prom2 done puts
+                   
+        After the first timer is settled, the handler registered by
+        the [then] method is run. This chains another promise based
+        on a second timer. You should see
+        
+            Timer 1 expired
+            Timer 2 expired
+
+        about 2 seconds apart.
+    } {Combining promises} {        
+        One of the biggest benefits of promises stems from the ability
+        to easily combine them.
+
+        You can initiate multiple asynchronous operations and then
+        use the [all] or [all*] commands to
+        schedule an action to be taken when on all of them to complete.
+        
+        Conversely, you can use the [race] or [race*] commands to schedule
+        an action to be taken when any one of several operations completes.
+        
+    } {Cleaning up} {
         TclOO objects are not garbage collected and have to be explicitly
         destroyed. In the case of promises, because of their asynchronous
         nature, it is often not clear to applications when the promise
@@ -863,9 +948,11 @@ proc promise::_document_self {path args} {
         times, it can use the 'ref' and 'unref' methods of a
         [::promise::Promise] object to explicitly manage its lifetime.
         
-    }]]
+    }
     
-    set dlist [concat $abstraction $construction $gc]
+    foreach {title docstring} $docs {
+        lappend doclist $title [ruff::extract_docstring $docstring]
+    }
     ::ruff::document_namespaces html [namespace current] \
         -includesource true \
         -autolink false \
@@ -874,10 +961,7 @@ proc promise::_document_self {path args} {
         -titledesc "promise (V[version])" \
         -copyright "[clock format [clock seconds] -format %Y] Ashok P. Nadkarni" \
         {*}$args \
-        -preamble [dict create :: \
-                       [list {*}$introduction] \
-                       ::promise \
-                       $dlist]
+        -preamble [dict create :: $introduction ::promise $doclist]
 }
 
 if {0} {
