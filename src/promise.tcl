@@ -77,6 +77,7 @@ oo::class create promise::Promise {
     # is placed on the event queue, not before. Else promises that
     # are immediately resolved on construction would be freed right
     # away before the application even gets a chance to call done/then.
+    variable _do_gc
     variable _nrefs
     
     constructor {cmd} {
@@ -91,12 +92,22 @@ oo::class create promise::Promise {
         
         set _state PENDING
         set _reactions [list ]
+        set _do_gc 0
         set _nrefs 0
         
         # Errors in the construction command are returned via
         # the standard mechanism of reject.
+        #
         if {[catch {
-            uplevel #0 [linsert $cmd end [self]]
+            # For some special cases, $cmd may be "" if the async operation
+            # is initiated outside the constructor. This is not a good
+            # thing because the error in the initiator will not be
+            # trapped via the standard promise error catching mechanism
+            # but that's the application's problem (actually pgeturl also
+            # uses this).
+            if {[llength $cmd]} {
+                uplevel #0 [linsert $cmd end [self]]
+            }
         } msg edict]} {
             my reject [list $msg $edict]
         }
@@ -146,7 +157,7 @@ oo::class create promise::Promise {
     }
     
     method GC {} {
-        if {$_nrefs <= 0 && [llength $_reactions] == 0} {
+        if {$_nrefs <= 0 && $_do_gc && [llength $_reactions] == 0} {
             my destroy
         }
     }
@@ -259,17 +270,20 @@ oo::class create promise::Promise {
             return
         }
 
-        if {$_state eq "FULFILLED"} {
-            set ix 0
-        } else {
-            set ix 1
-        }
-
-        foreach pair $_reactions {
-            set cmd [lindex $pair $ix]
+        set _do_gc 0
+        foreach reaction $_reactions {
+            set cmd [dict get $reaction $_state]
             if {[llength $cmd]} {
                 # Enqueue the reaction via the event loop passing $_value
                 after 0 [list after idle [linsert $cmd end $_value]]
+                set _do_gc 1
+            }
+            set cmd [dict get $reaction CLEANUP]
+            if {[llength $cmd]} {
+                # Enqueue the cleaner via the event loop passing the
+                # *state* as well as the value
+                after 0 [list after idle [linsert $cmd end $_state $_value]]
+                # Note we do not set _do_gc if we only run cleaners
             }
         }
         set _reactions [list ]
@@ -277,6 +291,15 @@ oo::class create promise::Promise {
         return 
     } 
 
+    method RegisterReactions {args} {
+        # Registers the specified reactions
+        #  args - dictionary keyed by "cleanup", "fulfill", "reject"
+        #     with values being the corresponding reaction callback
+        lappend _reactions [dict merge {CLEANUP "" FULFILLED "" REJECTED ""} $args]
+        my ScheduleReactions
+        return
+    }
+        
     method done {on_fulfill {on_reject {}}} {
         # Registers reactions to be run when the promise is settled
         #  on_fulfill - command prefix for the reaction to run
@@ -302,13 +325,18 @@ oo::class create promise::Promise {
 
         # TBD - as per the Promise/A+ spec, errors in done should generate
         # a background error (unlike then).
-        lappend _reactions [list $on_fulfill $on_reject]
-        # In case promise already fulfilled, we will need to run the reactions
-        my ScheduleReactions
+
+        my RegisterReactions FULFILLED $on_fulfill REJECTED $on_reject
 
         #ruff
         # The method does not return a value.
         return
+
+        # TBD - delete this
+        lappend _reactions [list $on_fulfill $on_reject]
+        # In case promise already fulfilled, we will need to run the reactions
+        my ScheduleReactions
+
     }
     
     method then {on_fulfill {on_reject {}}} {
@@ -351,6 +379,13 @@ oo::class create promise::Promise {
         #
         # Returns a new promise that is settled by the registered reactions.
         
+        set then_promise [[self class] new ""]
+        my RegisterReactions \
+            FULFILLED [list ::promise::_then_reaction $then_promise FULFILLED $on_fulfill] \
+            REJECTED [list ::promise::_then_reaction $then_promise REJECTED $on_fulfill]
+        return $then_promise
+
+        #TBD - delete rest
         return [[self class] new [list apply [list {antecedent on_fulfill on_reject prom} {
             $antecedent done \
                  [list ::promise::_then_reaction $prom FULFILLED $on_fulfill] \
@@ -390,6 +425,11 @@ oo::class create promise::Promise {
         #   and dictionary pair.
         #
         # Returns a new promise that is settled based on the cleaner
+        set cleaner_promise [[self class] new ""]
+        my RegisterReactions CLEANUP [list ::promise::_cleanup_reaction $cleaner_promise $cleaner]
+        return $cleaner_promise
+
+        #TBD - delete this
         return [[self class] new [list apply [list {antecedent on_settled prom} {
             $antecedent done \
                  [list ::promise::_cleanup_reaction $prom FULFILLED $on_settled] \
@@ -446,27 +486,27 @@ proc promise::_then_reaction {target_promise status cmd value} {
     return
 }
 
-proc promise::_cleanup_reaction {target_promise status cleaner value} {
+proc promise::_cleanup_reaction {target_promise cleaner state value} {
     # Run the specified cleaner and fulfill/reject the target promise
     # accordingly. If the cleaner executes without error, the original
-    # value and status is passed on. If the cleaner executes with error
+    # value and state is passed on. If the cleaner executes with error
     # the promise is rejected.
 
     if {[llength $cleaner] == 0} {
-        switch -exact -- $status {
+        switch -exact -- $state {
             FULFILLED { $target_promise fulfill $value }
             REJECTED  { $target_promise reject $value }
             CHAINED -
             PENDING  -
             default {
-                $target_promise reject [promise::_make_errval PROMISE THEN STATE "Internal error: invalid status $state"]
+                $target_promise reject [promise::_make_errval PROMISE THEN STATE "Internal error: invalid state $state"]
             }
         }
     } else {
         if {[catch {uplevel #0 $cleaner} err edict]} {
             $target_promise reject [list $err $edict]
         } else {
-            if {$status eq "FULFILLED"} {
+            if {$state eq "FULFILLED"} {
                 $target_promise fulfill $value
             } else {
                 $target_promise reject $value
@@ -673,19 +713,18 @@ proc promise::pgeturl {url args} {
     # http state array (see the documentation of [http::geturl]). If the
     # the status is anything else, the promise is rejected, again with
     # the contents of the http state array.
+    
     uplevel #0 {package require http}
     proc [namespace current]::pgeturl {url args} {
         set prom [promise::Promise new [lambda {http_args prom} {
             http::geturl {*}$http_args -command [promise::lambda {prom tok} {
                 upvar #0 $tok http_state
-                $prom cleanup [promise::lambda {tok} {
-                    ::http::cleanup $tok
-                } $tok]
                 if {$http_state(status) eq "ok"} {
                     $prom fulfill [array get http_state]
                 } else {
                     $prom reject [array get http_state]
                 }
+                http::cleanup $tok
             } $prom]
         } [linsert $args 0 $url]]]
         return $prom
