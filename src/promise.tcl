@@ -393,7 +393,7 @@ oo::class create promise::Promise {
             $antecedent done \
                  [list ::promise::_finally_reaction $prom FULFILLED $on_settled] \
                  [list ::promise::_finally_reaction $prom REJECTED $on_settled]
-        }] [self] $on_settled]]
+        }] [self] $finalizer]]
         
     }
     
@@ -677,12 +677,14 @@ proc promise::pgeturl {url args} {
         set prom [promise::Promise new [lambda {http_args prom} {
             http::geturl {*}$http_args -command [promise::lambda {prom tok} {
                 upvar #0 $tok http_state
+                $prom finally [promise::lambda {tok} {
+                    ::http::cleanup $tok
+                } $tok]
                 if {$http_state(status) eq "ok"} {
                     $prom fulfill [array get http_state]
                 } else {
                     $prom reject [array get http_state]
                 }
-                ::http::cleanup $tok
             } $prom]
         } [linsert $args 0 $url]]]
         return $prom
