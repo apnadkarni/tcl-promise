@@ -64,19 +64,16 @@ oo::class create promise::Promise {
     # case, it should be an error dictionary by convention
     variable _value
 
-    # Handlers to be notified when the promise is rejected. Each element
-    # in this list is a pair consisting of the fulfilment handler
-    # and the rejection handler. Either element of the pair could be
-    # empty signifying no handler for that case. The list is populated
+    # Reactions to be notified when the promise is rejected. Each element
+    # in this list is a pair consisting of the fulfilment reaction
+    # and the rejection reaction. Either element of the pair could be
+    # empty signifying no reaction for that case. The list is populated
     # via the then method.
-    variable _handlers
+    variable _reactions
 
     # Reference counting to free up promises since Tcl does not have
-    # garbage collection for objects. An *internal* reference count
-    # is maintained when callbacks are scheduled so that a promise
-    # is not released while a callback queued on the event loop holds
-    # a reference. Additionally, garbage collection via reference
-    # counting only takes place after at least one done/then callback
+    # garbage collection for objects. Garbage collection via reference
+    # counting only takes place after at least one done/then reaction
     # is placed on the event queue, not before. Else promises that
     # are immediately resolved on construction would be freed right
     # away before the application even gets a chance to call done/then.
@@ -93,7 +90,7 @@ oo::class create promise::Promise {
         # [reject] to be called when the operation completes.
         
         set _state PENDING
-        set _handlers [list ]
+        set _reactions [list ]
         set _nrefs 0
         
         # Errors in the construction command are returned via
@@ -149,7 +146,7 @@ oo::class create promise::Promise {
     }
     
     method GC {} {
-        if {$_nrefs <= 0 && [llength $_handlers] == 0} {
+        if {$_nrefs <= 0 && [llength $_reactions] == 0} {
             my destroy
         }
     }
@@ -160,7 +157,7 @@ oo::class create promise::Promise {
         }
         set _value $value
         set _state FULFILLED
-        my ScheduleHandlers
+        my ScheduleReactions
         return
     }
     
@@ -170,7 +167,7 @@ oo::class create promise::Promise {
         }
         set _value $erval
         set _state REJECTED
-        my ScheduleHandlers
+        my ScheduleReactions
         return
     }
     
@@ -191,11 +188,11 @@ oo::class create promise::Promise {
         #ruff
         # Otherwise, it is transitioned to the 'FULFILLED' state with
         # the value specified by $value. If there are any fulfillment
-        # handlers registered by the [done] or [then] methods, they
+        # reactions registered by the [done] or [then] methods, they
         # are scheduled to be run.
         set _value $value
         set _state FULFILLED
-        my ScheduleHandlers
+        my ScheduleReactions
         return 1
     }
 
@@ -246,19 +243,19 @@ oo::class create promise::Promise {
         #ruff
         # Otherwise, it is transitioned to the 'REJECTED' state with
         # the value specified by $errval. If there are any reject
-        # handlers registered by the [done] or [then] methods, they
+        # reactions registered by the [done] or [then] methods, they
         # are scheduled to be run.
         set _value $errval
         set _state REJECTED
-        my ScheduleHandlers
+        my ScheduleReactions
         return 1
     }
 
-    # Internal method to queue all registered handlers based on
+    # Internal method to queue all registered reactions based on
     # whether the promise is succesfully fulfilled or not
-    method ScheduleHandlers {} {
-        if {$_state ni {FULFILLED REJECTED} || [llength $_handlers] == 0 } {
-            # Promise is not settled or no handlers registered
+    method ScheduleReactions {} {
+        if {$_state ni {FULFILLED REJECTED} || [llength $_reactions] == 0 } {
+            # Promise is not settled or no reactions registered
             return
         }
 
@@ -268,46 +265,46 @@ oo::class create promise::Promise {
             set ix 1
         }
 
-        foreach pair $_handlers {
+        foreach pair $_reactions {
             set cmd [lindex $pair $ix]
             if {[llength $cmd]} {
-                # Enqueue the callback via the event loop passing $_value
+                # Enqueue the reaction via the event loop passing $_value
                 after 0 [list after idle [linsert $cmd end $_value]]
             }
         }
-        set _handlers [list ]
+        set _reactions [list ]
         my GC
         return 
     } 
 
     method done {on_fulfill {on_reject {}}} {
-        # Registers callback handlers to be run when the promise is settled
-        #  on_fulfill - command prefix for the callback handler to run
+        # Registers reactions to be run when the promise is settled
+        #  on_fulfill - command prefix for the reaction to run
         #    if the promise is fulfilled. If an empty string, no fulfill
-        #    handler is registered.
-        #  on_reject - command prefix for the callback handler to run
+        #    reaction is registered.
+        #  on_reject - command prefix for the reaction to run
         #    if the promise is rejected. If unspecified or an empty string,
-        #    no reject handler is registered.
-        # Both handlers are called with an additional argument which is
+        #    no reject reaction is registered.
+        # Reactions are called with an additional argument which is
         # the value with which the promise was settled.
         # 
         # The command may be called multiple times to register multiple
-        # handlers to be run at promise settlement. If the promise was
-        # already settled at the time the call was made, the handlers
-        # are invoked immediately. In all cases, handlers are not called
+        # reactions to be run at promise settlement. If the promise was
+        # already settled at the time the call was made, the reactions
+        # are invoked immediately. In all cases, reactions are not called
         # directly, but are invoked by scheduling through the event loop.
         #
         # The method triggers garbage collection of the object if the
-        # promise has been settled and registered handlers have been
+        # promise has been settled and registered reactions have been
         # scheduled. Applications can hold on to the object through
         # appropriate use of the [ref] and [unref] methods.
         #
 
         # TBD - as per the Promise/A+ spec, errors in done should generate
         # a background error (unlike then).
-        lappend _handlers [list $on_fulfill $on_reject]
-        # In case promise already fulfilled, we will need to run the handlers
-        my ScheduleHandlers
+        lappend _reactions [list $on_fulfill $on_reject]
+        # In case promise already fulfilled, we will need to run the reactions
+        my ScheduleReactions
 
         #ruff
         # The method does not return a value.
@@ -315,52 +312,70 @@ oo::class create promise::Promise {
     }
     
     method then {on_fulfill {on_reject {}}} {
-        # Registers callback handlers to be run when the promise is settled
+        # Registers reactions to be run when the promise is settled
         # and returns a new [Promise] object that will be settled by the
-        # handlers.
-        #  on_fulfill - command prefix for the callback handler to run
+        # reactions.
+        #  on_fulfill - command prefix for the reaction to run
         #    if the promise is fulfilled. If an empty string, no fulfill
-        #    handler is registered.
-        #  on_reject - command prefix for the callback handler to run
+        #    reaction is registered.
+        #  on_reject - command prefix for the reaction to run
         #    if the promise is rejected. If unspecified or an empty string,
-        #    no reject handler is registered.
-        # Both handlers are called with an additional argument which is
+        #    no reject reaction is registered.
+        # Both reactions are called with an additional argument which is
         # the value with which the promise was settled.
         # 
         # The command may be called multiple times to register multiple
-        # handlers to be run at promise settlement. If the promise was
-        # already settled at the time the call was made, the handlers
-        # are invoked immediately. In all cases, handlers are not called
+        # reactions to be run at promise settlement. If the promise was
+        # already settled at the time the call was made, the reactions
+        # are invoked immediately. In all cases, reactions are not called
         # directly, but are invoked by scheduling through the event loop.
         #
-        # If the handler that is invoked runs without error, its return
+        # If the reaction that is invoked runs without error, its return
         # value fulfills the new promise returned by the 'then' method.
         # If it raises an exception, the new promise will be rejected
         # with the error message and dictionary from the exception.
         #
-        # Alternatively, the handlers can explicitly invoke commands
+        # Alternatively, the reactions can explicitly invoke commands
         # [then_fulfill], [then_reject] or [then_chain] to
         # resolve the returned promise. In this case, the return value
-        # (including exceptions) from the handlers are ignored.
+        # (including exceptions) from the reactions are ignored.
         #
         # If 'on_fulfill' (or 'on_reject') is an empty string (or unspecified),
         # the new promise is created and fulfilled (or rejected) with
-        # the same value that would have been passed in to the handlers.
+        # the same value that would have been passed in to the reactions.
         #
         # The method triggers garbage collection of the object if the
-        # promise has been settled and registered handlers have been
+        # promise has been settled and registered reactions have been
         # scheduled. Applications can hold on to the object through
         # appropriate use of the [ref] and [unref] methods.
         #
         return [[self class] new [list apply [list {predecessor on_fulfill on_reject prom} {
             $predecessor done \
-                 [list ::promise::_then_handler $prom FULFILLED $on_fulfill] \
-                 [list ::promise::_then_handler $prom REJECTED $on_reject]
+                 [list ::promise::_then_reaction $prom FULFILLED $on_fulfill] \
+                 [list ::promise::_then_reaction $prom REJECTED $on_reject]
         }] [self] $on_fulfill $on_reject]]
     }
+
+    # This could be a forward, but then we cannot document it via ruff!
+    method catch {on_reject} {
+        # Registers reactions to be run when the promise is rejected
+        #   on_reject - command prefix for the reaction
+        #     reaction to run if the promise is rejected. If unspecified
+        #     or an empty string, no reject reaction is registered. The
+        #     reaction is called with an additional argument which is the
+        #     value with which the promise was settled.
+        # This method is just a wrapper around [then] with the
+        # 'on_fulfill' parameter defaulting to an empty string. See
+        # the description of that method for details.
+        return [my then "" $on_reject]
+    }
+    
+    # TBD - method cleanup
+    # TBD - method finally
+
 }
 
-proc promise::_then_handler {target_promise status cmd value} {
+proc promise::_then_reaction {target_promise status cmd value} {
     # Run the specified command and fulfill/reject the target promise
     # accordingly. If the command is empty, the passed-in value is passed
     # on to the target promise.
@@ -376,7 +391,7 @@ proc promise::_then_handler {target_promise status cmd value} {
     # carry that around.
 
     if {[info level] != 1} {
-        error "Internal error: _then_handler not at level 1"
+        error "Internal error: _then_reaction not at level 1"
     }
     
     if {[llength $cmd] == 0} {
@@ -390,8 +405,8 @@ proc promise::_then_handler {target_promise status cmd value} {
             }
         }
     } else {
-        # Invoke the real handler code and fulfill/reject the target promise.
-        # Not the handler code may have called one of the promise::then_*
+        # Invoke the real reaction code and fulfill/reject the target promise.
+        # Not the reaction code may have called one of the promise::then_*
         # commands itself in which case these calls will be no-ops.
         # TBD - ideally we would like to execute at global level. However
         # the then_* commands retrieve target_promise from level 1 (here).
@@ -407,18 +422,18 @@ proc promise::_then_handler {target_promise status cmd value} {
 
 proc promise::then_fulfill {value} {
     # Fulfills the promise returned by a [then] method call from
-    # within its callback handler
+    # within its reaction
     #  value - the value with which to fulfill the promise
     #
     # The [Promise.then] method is a mechanism to chain asynchronous
-    # callbacks by registering them on a promise. It returns a new
-    # promise which is settled by the return value from the handler,
-    # or by the handler calling one of three commands - 'then_fulfill',
+    # reactions by registering them on a promise. It returns a new
+    # promise which is settled by the return value from the reaction,
+    # or by the reaction calling one of three commands - 'then_fulfill',
     # [then_reject] or [then_promise]. Calling 'then_fulfill' fulfills
     # the promise returned by the 'then' method that queued the currently
-    # running callback.
+    # running reaction.
     #
-    # It is an error to call this command from outside a callback
+    # It is an error to call this command from outside a reaction
     # that was queued via the [then] method on a promise.
     
     # TBD - what if someone calls this from within a uplevel #0 ? The
@@ -438,15 +453,15 @@ proc promise::then_chain {promise} {
     #     to be chained
     #
     # The [Promise.then] method is a mechanism to chain asynchronous
-    # callbacks by registering them on a promise. It returns a new
-    # promise which is settled by the return value from the handler,
-    # or by the handler calling one of three commands - [then_fulfill],
+    # reactions by registering them on a promise. It returns a new
+    # promise which is settled by the return value from the reaction,
+    # or by the reaction calling one of three commands - [then_fulfill],
     # 'then_reject' or [then_promise]. Calling 'then_chain' chains
     # the promise returned by the 'then' method that queued the currently
-    # running callback to $promise so that the former will be settled
+    # running reaction to $promise so that the former will be settled
     # based on the latter.
     #
-    # It is an error to call this command from outside a callback
+    # It is an error to call this command from outside a reaction
     # that was queued via the [then] method on a promise.
     upvar #1 target_promise target_promise
     if {![info exists target_promise]} {
@@ -458,18 +473,18 @@ proc promise::then_chain {promise} {
 
 proc promise::then_reject {errval} {
     # Rejects the promise returned by a [then] method call from
-    # within its callback handler
+    # within its reaction
     #  errval - the value with which to fulfill the promise
     #
     # The [Promise.then] method is a mechanism to chain asynchronous
-    # callbacks by registering them on a promise. It returns a new
-    # promise which is settled by the return value from the handler,
-    # or by the handler calling one of three commands - [then_fulfill],
+    # reactions by registering them on a promise. It returns a new
+    # promise which is settled by the return value from the reaction,
+    # or by the reaction calling one of three commands - [then_fulfill],
     # 'then_reject' or [then_promise]. Calling 'then_reject' rejects
     # the promise returned by the 'then' method that queued the currently
-    # running callback.
+    # running reaction.
     #
-    # It is an error to call this command from outside a callback
+    # It is an error to call this command from outside a reaction
     # that was queued via the [then] method on a promise.
     upvar #1 target_promise target_promise
     if {![info exists target_promise]} {
@@ -630,7 +645,11 @@ proc promise::ptimer {millisecs {value "Timer expired."}} {
     # and an error dictionary.
     # Also see [ptimeout] which is similar but rejects the promise instead
     # of fulfilling it.
-
+    
+    if {![string is integer $millisecs]} {
+        # We don't want to accept "idle", "cancel" etc. for after
+        throw {PROMISE TIMER INVALID} "Invalid timeout value \"$millisecs\"."
+    }
     return [promise::Promise new [lambda {millisecs value prom} {
         after $millisecs [list $prom fulfill $value]
     } $millisecs $value]]
@@ -647,6 +666,10 @@ proc promise::ptimeout {millisecs {value "Operation timed out."}} {
     # Also see [ptimer] which is similar but fulfills the promise instead
     # of rejecting it.
 
+    if {![string is integer $millisecs]} {
+        # We don't want to accept "idle", "cancel" etc. for after
+        throw {PROMISE TIMER INVALID} "Invalid timeout value \"$millisecs\"."
+    }
     return [promise::Promise new [lambda {millisecs value prom} {
         after $millisecs [list $prom reject $value]
     } $millisecs $value]]

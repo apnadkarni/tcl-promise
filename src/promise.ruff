@@ -41,13 +41,29 @@ proc promise::document {path args} {
         Some additional terms:
 
         A promise is said to be settled if it is either in the 'FULFILLED'
-        or 'REJECTED' s state. A promise that is settled will thereafter never
+        or 'REJECTED' state. A promise that is settled will thereafter never
         change state.
 
         A promise is said to be resolved if it is settled or if it
         is attached to the state of another promise.
 
-        In this package, the [::promise::Promise] class implements promises.
+	Applications can register callbacks to be run when a promise
+	is settled. These callbacks are refered to as reactions.
+
+        Promises are implemented by the [::promise::Promise] class.
+    } {Download and install} {
+        The package is distributed as a single Tcl module and
+        can be downloaded from
+        http://sourceforge.net/projects/tcl-promise/files/. It should
+        be placed in any of the directories returned by
+        the 'tcl::tm::path list' command in your Tcl installation.
+    } {Loading and requirements} {
+        The package requires Tcl 8.6 or later and is loaded with the
+        standard command
+            package require promise
+
+	All functionality related to promises requires the Tcl event loop
+	to be running.
     } {Constructing promises} {
         Promises are constructed by creating instances of the
         [::promise::Promise] class. The constructor is passed a script
@@ -88,11 +104,13 @@ proc promise::document {path args} {
         promise by calling its 'fulfill' method.
 
             $prom fulfill $value
-    } {Resolution handlers} {
-        An application will generally register handlers to be called
-        (asynchronously of course) when the promise is settled. In the
-        simplest case, the handlers are registered with the [Promise.done]
-        method. In our example above, calling
+    } {Promise reactions} {
+        An application will generally register callbacks,
+        called reactions as in the ES6 specifications, to be invoked
+        (asynchronously) when the promise is settled.
+
+        In the simplest case, the reactions are registered with the
+        [Promise.done] method. In our example above, calling
         
             $prom done puts
 
@@ -103,7 +121,7 @@ proc promise::document {path args} {
         when the promise was fulfilled by the 'after' callback.
 
         The 'done' method may be called multiple times and each
-        handler registered through it will be run when the promise
+        reaction registered through it will be run when the promise
         is settled.
     } {Chaining promises} {
         In more complex scenarios, the application may wish to take
@@ -121,7 +139,7 @@ proc promise::document {path args} {
             }]]
             $prom2 done puts
                    
-        After the first timer is settled, the handler registered by
+        After the first timer is settled, the reaction registered by
         the [then] method is run. This chains another promise based
         on a second timer. You should see
         
@@ -135,10 +153,10 @@ proc promise::document {path args} {
 
         You can initiate multiple asynchronous operations and then
         use the [all] or [all*] commands to
-        schedule an action to be taken when on all of them to complete.
+        register an reaction for when all of them complete.
         
         Conversely, you can use the [race] or [race*] commands to schedule
-        an action to be taken when any one of several operations completes.
+        an reaction for when any one of several operations completes.
         
     } {Cleaning up} {
         TclOO objects are not garbage collected and have to be explicitly
@@ -148,7 +166,7 @@ proc promise::document {path args} {
 
         Therefore the package internally manages the lifetime of Promise
         objects such that they are automatically destroyed once they are
-        settled and at least one fulfillment or rejection handler has been
+        settled and at least one fulfillment or rejection reaction has been
         run. This removes the burden from the application in the most common
         usage scenarios. In cases where the application wants the object to
         persist, for example, when the resolved value is accessed multiple
