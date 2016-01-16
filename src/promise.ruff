@@ -168,7 +168,7 @@ proc promise::document {path args} {
         aspects. The first is to clean up any resources that were
         allocated. The second is to destroy the [Promise] object itself.
 
-        For the first, an application can call the [Promise.finally]
+        For the first, an application can call the [Promise.cleanup]
         method to register a reaction to run when the promise is
         settled. Note this is run when the promise is settled, not
         when the object is destroyed.

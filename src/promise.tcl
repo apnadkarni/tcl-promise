@@ -372,28 +372,29 @@ oo::class create promise::Promise {
         return [my then "" $on_reject]
     }
     
-    method finally {finalizer} {
-        # Registers a finalizer to be executed for running finalization
+    method cleanup {cleaner} {
+        # Registers a reaction to be executed for running cleanup
         # code when the promise is settled
-        #   finalizer - command prefix to run on settlement
-        # This method is intended to run a finalization script for
-        # purposes of cleanup etc. when a promise is settled.
+        #   cleaner - command prefix to run on settlement
+        # This method is intended to run a clean up script 
+        # when a promise is settled. It may also be called multiple times
+        # to clean up intermediate steps when promises are chained.
         # 
         # The method returns a new promise that will be settled
         # as per the following rules.
-        # - if the finalizer runs without errors, the returned promise
+        # - if the cleaner runs without errors, the returned promise
         #   will reflect the settlement of the promise on which this
         #   method is called.
-        # - if the finalizer raises an exception, the returned promise
+        # - if the cleaner raises an exception, the returned promise
         #   is rejected with a value consisting of the error message
         #   and dictionary pair.
         #
-        # Returns a new promise that is settled based on the finalizer
+        # Returns a new promise that is settled based on the cleaner
         return [[self class] new [list apply [list {antecedent on_settled prom} {
             $antecedent done \
-                 [list ::promise::_finally_reaction $prom FULFILLED $on_settled] \
-                 [list ::promise::_finally_reaction $prom REJECTED $on_settled]
-        }] [self] $finalizer]]
+                 [list ::promise::_cleanup_reaction $prom FULFILLED $on_settled] \
+                 [list ::promise::_cleanup_reaction $prom REJECTED $on_settled]
+        }] [self] $cleaner]]
         
     }
     
@@ -445,13 +446,13 @@ proc promise::_then_reaction {target_promise status cmd value} {
     return
 }
 
-proc promise::_finally_reaction {target_promise status finalizer value} {
-    # Run the specified finalizer and fulfill/reject the target promise
-    # accordingly. If the finalizer executes without error, the original
-    # value and status is passed on. If the finalizer executes with error
+proc promise::_cleanup_reaction {target_promise status cleaner value} {
+    # Run the specified cleaner and fulfill/reject the target promise
+    # accordingly. If the cleaner executes without error, the original
+    # value and status is passed on. If the cleaner executes with error
     # the promise is rejected.
 
-    if {[llength $finalizer] == 0} {
+    if {[llength $cleaner] == 0} {
         switch -exact -- $status {
             FULFILLED { $target_promise fulfill $value }
             REJECTED  { $target_promise reject $value }
@@ -462,7 +463,7 @@ proc promise::_finally_reaction {target_promise status finalizer value} {
             }
         }
     } else {
-        if {[catch {uplevel #0 $finalizer} err edict]} {
+        if {[catch {uplevel #0 $cleaner} err edict]} {
             $target_promise reject [list $err $edict]
         } else {
             if {$status eq "FULFILLED"} {
@@ -677,7 +678,7 @@ proc promise::pgeturl {url args} {
         set prom [promise::Promise new [lambda {http_args prom} {
             http::geturl {*}$http_args -command [promise::lambda {prom tok} {
                 upvar #0 $tok http_state
-                $prom finally [promise::lambda {tok} {
+                $prom cleanup [promise::lambda {tok} {
                     ::http::cleanup $tok
                 } $tok]
                 if {$http_state(status) eq "ok"} {
