@@ -349,8 +349,10 @@ oo::class create promise::Promise {
         # scheduled. Applications can hold on to the object through
         # appropriate use of the [ref] and [unref] methods.
         #
-        return [[self class] new [list apply [list {predecessor on_fulfill on_reject prom} {
-            $predecessor done \
+        # Returns a new promise that is settled by the registered reactions.
+        
+        return [[self class] new [list apply [list {antecedent on_fulfill on_reject prom} {
+            $antecedent done \
                  [list ::promise::_then_reaction $prom FULFILLED $on_fulfill] \
                  [list ::promise::_then_reaction $prom REJECTED $on_reject]
         }] [self] $on_fulfill $on_reject]]
@@ -370,9 +372,32 @@ oo::class create promise::Promise {
         return [my then "" $on_reject]
     }
     
+    method finally {finalizer} {
+        # Registers a finalizer to be executed for running finalization
+        # code when the promise is settled
+        #   finalizer - command prefix to run on settlement
+        # This method is intended to run a finalization script for
+        # purposes of cleanup etc. when a promise is settled.
+        # 
+        # The method returns a new promise that will be settled
+        # as per the following rules.
+        # - if the finalizer runs without errors, the returned promise
+        #   will reflect the settlement of the promise on which this
+        #   method is called.
+        # - if the finalizer raises an exception, the returned promise
+        #   is rejected with a value consisting of the error message
+        #   and dictionary pair.
+        #
+        # Returns a new promise that is settled based on the finalizer
+        return [[self class] new [list apply [list {antecedent on_settled prom} {
+            $antecedent done \
+                 [list ::promise::_finally_reaction $prom FULFILLED $on_settled] \
+                 [list ::promise::_finally_reaction $prom REJECTED $on_settled]
+        }] [self] $on_settled]]
+        
+    }
+    
     # TBD - method cleanup
-    # TBD - method finally
-
 }
 
 proc promise::_then_reaction {target_promise status cmd value} {
@@ -382,7 +407,7 @@ proc promise::_then_reaction {target_promise status cmd value} {
 
     # IMPORTANT!!!!
     # MUST BE CALLED FROM EVENT LOOP AT so info level must be 1. Else
-    # promise::fulfill/reject will not work
+    # promise::then_fulfill/then_reject will not work
     # Also, Do NOT change the param name target_promise without changing
     # those procs.
     # Oh what a hack to get around lack of closures. Alternative would have
@@ -415,6 +440,36 @@ proc promise::_then_reaction {target_promise status cmd value} {
             $target_promise reject [list $value $edict]
         } else {
             $target_promise fulfill $value
+        }
+    }
+    return
+}
+
+proc promise::_finally_reaction {target_promise status finalizer value} {
+    # Run the specified finalizer and fulfill/reject the target promise
+    # accordingly. If the finalizer executes without error, the original
+    # value and status is passed on. If the finalizer executes with error
+    # the promise is rejected.
+
+    if {[llength $finalizer] == 0} {
+        switch -exact -- $status {
+            FULFILLED { $target_promise fulfill $value }
+            REJECTED  { $target_promise reject $value }
+            CHAINED -
+            PENDING  -
+            default {
+                $target_promise reject [promise::_make_errval PROMISE THEN STATE "Internal error: invalid status $state"]
+            }
+        }
+    } else {
+        if {[catch {uplevel #0 $finalizer} err edict]} {
+            $target_promise reject [list $err $edict]
+        } else {
+            if {$status eq "FULFILLED"} {
+                $target_promise fulfill $value
+            } else {
+                $target_promise reject $value
+            }
         }
     }
     return
@@ -748,7 +803,7 @@ proc promise::safe_fulfill {prom value} {
         # The object has been deleted. Naught to do
         return 0
     }
-    return [$prom fulfill $result]
+    return [$prom fulfill $value]
 }
 
 proc promise::safe_reject {prom errval} {
@@ -764,7 +819,7 @@ proc promise::safe_reject {prom errval} {
         # The object has been deleted. Naught to do
         return
     }
-    $prom reject $result
+    $prom reject $errval
 }
 
 proc promise::ptask {script} {

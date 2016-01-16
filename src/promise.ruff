@@ -154,11 +154,26 @@ proc promise::document {path args} {
         You can initiate multiple asynchronous operations and then
         use the [all] or [all*] commands to
         register an reaction for when all of them complete.
+
+            set calculation [all* [ptask {expr 2+3}] [ptask {expr 4+5}]]
+            $calculation done [lambda {values} {
+                puts [tcl::mathop::+ {*}$values]
+            }] [lambda {errval} {puts "Error: [lindex $errval 0]"}]
         
         Conversely, you can use the [race] or [race*] commands to schedule
         an reaction for when any one of several operations completes.
         
     } {Cleaning up} {
+        Cleaning up a series of promise-based async operations has two
+        aspects. The first is to clean up any resources that were
+        allocated. The second is to destroy the [Promise] object itself.
+
+        For the first, an application can call the [Promise.finally]
+        method to register a reaction to run when the promise is
+        settled. Note this is run when the promise is settled, not
+        when the object is destroyed.
+
+        Regarding destroying the [Promise] objects themselves, normally
         TclOO objects are not garbage collected and have to be explicitly
         destroyed. In the case of promises, because of their asynchronous
         nature, it is often not clear to applications when the promise
