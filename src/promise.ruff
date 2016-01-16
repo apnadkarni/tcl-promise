@@ -10,13 +10,26 @@ proc promise::document {path args} {
 
     package require ruff
 
-    set introduction [list Introduction [ruff::extract_docstring {
+    lappend introduction Introduction {
         This package implements the 'promise' abstraction for
         asynchronous programming. This document is the reference for
         commands and classes implemented by the package. For a
         tutorial introduction to promises, usage guide and examples, see
         http://www.magicsplat.com/blog/promises.
-    }]]
+    } {Download and install} {
+        The package is distributed as a single Tcl module and
+        can be downloaded from
+        http://sourceforge.net/projects/tcl-promise/files/. It should
+        be placed in any of the directories returned by
+        the 'tcl::tm::path list' command in your Tcl installation.
+    } {Loading and requirements} {
+        The package requires Tcl 8.6 or later and is loaded with the
+        standard command
+            package require promise
+
+	All functionality related to promises requires the Tcl event loop
+	to be running.
+    }
 
     lappend docs {Promises} {
         The promise abstraction encapsulates the eventual result of a
@@ -51,19 +64,6 @@ proc promise::document {path args} {
 	is settled. These callbacks are refered to as reactions.
 
         Promises are implemented by the [::promise::Promise] class.
-    } {Download and install} {
-        The package is distributed as a single Tcl module and
-        can be downloaded from
-        http://sourceforge.net/projects/tcl-promise/files/. It should
-        be placed in any of the directories returned by
-        the 'tcl::tm::path list' command in your Tcl installation.
-    } {Loading and requirements} {
-        The package requires Tcl 8.6 or later and is loaded with the
-        standard command
-            package require promise
-
-	All functionality related to promises requires the Tcl event loop
-	to be running.
     } {Constructing promises} {
         Promises are constructed by creating instances of the
         [::promise::Promise] class. The constructor is passed a script
@@ -190,6 +190,10 @@ proc promise::document {path args} {
         
     }
     
+    foreach {title docstring} $introduction {
+        lappend introlist $title [ruff::extract_docstring $docstring]
+    }
+    
     foreach {title docstring} $docs {
         lappend doclist $title [ruff::extract_docstring $docstring]
     }
@@ -201,7 +205,7 @@ proc promise::document {path args} {
         -titledesc "promise (V[version])" \
         -copyright "[clock format [clock seconds] -format %Y] Ashok P. Nadkarni" \
         {*}$args \
-        -preamble [dict create :: $introduction ::promise $doclist]
+        -preamble [dict create :: $introlist ::promise $doclist]
 }
 
 promise::document promise-[promise::version].html
