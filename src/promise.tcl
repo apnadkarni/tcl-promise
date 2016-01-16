@@ -331,12 +331,6 @@ oo::class create promise::Promise {
         #ruff
         # The method does not return a value.
         return
-
-        # TBD - delete this
-        lappend _reactions [list $on_fulfill $on_reject]
-        # In case promise already fulfilled, we will need to run the reactions
-        my ScheduleReactions
-
     }
     
     method then {on_fulfill {on_reject {}}} {
@@ -384,13 +378,6 @@ oo::class create promise::Promise {
             FULFILLED [list ::promise::_then_reaction $then_promise FULFILLED $on_fulfill] \
             REJECTED [list ::promise::_then_reaction $then_promise REJECTED $on_fulfill]
         return $then_promise
-
-        #TBD - delete rest
-        return [[self class] new [list apply [list {antecedent on_fulfill on_reject prom} {
-            $antecedent done \
-                 [list ::promise::_then_reaction $prom FULFILLED $on_fulfill] \
-                 [list ::promise::_then_reaction $prom REJECTED $on_reject]
-        }] [self] $on_fulfill $on_reject]]
     }
 
     # This could be a forward, but then we cannot document it via ruff!
@@ -428,17 +415,7 @@ oo::class create promise::Promise {
         set cleaner_promise [[self class] new ""]
         my RegisterReactions CLEANUP [list ::promise::_cleanup_reaction $cleaner_promise $cleaner]
         return $cleaner_promise
-
-        #TBD - delete this
-        return [[self class] new [list apply [list {antecedent on_settled prom} {
-            $antecedent done \
-                 [list ::promise::_cleanup_reaction $prom FULFILLED $on_settled] \
-                 [list ::promise::_cleanup_reaction $prom REJECTED $on_settled]
-        }] [self] $cleaner]]
-        
     }
-    
-    # TBD - method cleanup
 }
 
 proc promise::_then_reaction {target_promise status cmd value} {
