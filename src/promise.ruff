@@ -61,8 +61,8 @@ proc promise::document {path args} {
         A promise is said to be resolved if it is settled or if it
         is attached to the state of another promise.
 
-	Applications can register callbacks to be run when a promise
-	is settled. These callbacks are refered to as reactions.
+        Applications can register callbacks to be run when a promise
+        is settled. These callbacks are refered to as reactions.
 
         Promises are implemented by the [::promise::Promise] class.
     } {Constructing promises} {

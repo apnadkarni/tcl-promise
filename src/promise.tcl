@@ -688,7 +688,9 @@ proc promise::pgeturl {url args} {
     # of the 'http' package. If the operation completes with a status of
     # 'ok', the returned promise is fulfilled with the contents of the
     # http state array (see the documentation of [http::geturl]). If the
-    # the status is anything else, the promise is rejected, again with
+    # the status is anything else, the promise is rejected with a two
+    # element list consisting of the error message and dictionary. The
+    # 'http_state' key in the error dictionary contains
     # the contents of the http state array.
     
     uplevel #0 {package require http}
@@ -699,7 +701,15 @@ proc promise::pgeturl {url args} {
                 if {$http_state(status) eq "ok"} {
                     $prom fulfill [array get http_state]
                 } else {
-                    $prom reject [array get http_state]
+                    if {[info exists http_state(error)]} {
+                        set msg [lindex $http_state(error) 0]
+                    }
+                    if {![info exists msg] || $msg eq ""} {
+                        set msg "Error retrieving URL."
+                    }
+                    lassign [promise::_make_errval PROMISE PGETURL $msg] msg edict
+                    dict set edict http_state [array get http_state]
+                    $prom reject [list $msg $edict]
                 }
                 http::cleanup $tok
             } $prom]
@@ -720,11 +730,11 @@ proc promise::ptimer {millisecs {value "Timer expired."}} {
     # Also see [ptimeout] which is similar but rejects the promise instead
     # of fulfilling it.
     
-    if {![string is integer $millisecs]} {
-        # We don't want to accept "idle", "cancel" etc. for after
-        throw {PROMISE TIMER INVALID} "Invalid timeout value \"$millisecs\"."
-    }
     return [promise::Promise new [lambda {millisecs value prom} {
+        if {![string is integer $millisecs]} {
+            # We don't want to accept "idle", "cancel" etc. for after
+            throw {PROMISE TIMER INVALID} "Invalid timeout value \"$millisecs\"."
+        }
         after $millisecs [list $prom fulfill $value]
     } $millisecs $value]]
 }
@@ -740,12 +750,15 @@ proc promise::ptimeout {millisecs {value "Operation timed out."}} {
     # Also see [ptimer] which is similar but fulfills the promise instead
     # of rejecting it.
 
-    if {![string is integer $millisecs]} {
-        # We don't want to accept "idle", "cancel" etc. for after
-        throw {PROMISE TIMER INVALID} "Invalid timeout value \"$millisecs\"."
-    }
     return [promise::Promise new [lambda {millisecs value prom} {
-        after $millisecs [list $prom reject $value]
+        if {![string is integer $millisecs]} {
+            # We don't want to accept "idle", "cancel" etc. for after
+            throw {PROMISE TIMER INVALID} "Invalid timeout value \"$millisecs\"."
+        }
+        after $millisecs [::promise::lambda {prom msg} {
+            catch {throw {PROMISE TIMER EXPIRED} $msg} msg edict
+            ::promise::safe_reject $prom [list $msg $edict]
+        } $prom $value]
     } $millisecs $value]]
 }
 
@@ -764,7 +777,12 @@ proc promise::pconnect {args} {
         set so [socket -async {*}$so_args]
         fileevent $so writable [promise::lambda {prom so} {
             fileevent $so writable {}
-            $prom fulfill $so
+            set err [chan configure $so -error]
+            if {$err eq ""} {
+                $prom fulfill $so
+            } else {
+                $prom reject [::promise::_make_errval PROMISE PCONNECT $err]
+            }
         } $prom $so]
     } $args]]
 }
