@@ -949,7 +949,9 @@ if {[info exists ::argv0] &&
         tm -
         dist* {
             if {[file extension [info script]] ne ".tm"} {
-                file copy -force [info script] [file rootname [info script]]-[promise::version].tm
+                set dir [file join [file dirname [info script]] .. build]
+                file mkdir $dir
+                file copy -force [info script] [file join $dir [file rootname [info script]]-[promise::version].tm]
             } else {
                 error "Cannot create distribution from a .tm file"
             }

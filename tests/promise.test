@@ -1,0 +1,26 @@
+package require tcltest
+tcl::tm::path add [file normalize ../src]
+package require promise
+
+namespace eval promise::test {
+    namespace import ::tcltest::test
+    interp alias {} lambda {} promise::lambda
+    
+    test version-1.0 {Test the version} -body {
+        ::promise::version
+    } -result 1.0a0
+
+    test ptimer-1.0 {ptimer} -body {
+        [promise::ptimer 100] done [lambda value {set ::timer_done $value}]
+        vwait ::timer_done
+        list $::timer_done [info class instances ::promise::Promise]
+    } -result {{Timer expired.} {}}
+    
+    test ptimeout-1.0 {ptimeout} -body {
+        [promise::ptimeout 100] done "" [lambda value {set ::timer_done $value}]
+        vwait ::timer_done
+        list $::timer_done [info class instances ::promise::Promise]
+    } -result {{Operation timed out.} {}}
+}
+
+tcltest::cleanupTests

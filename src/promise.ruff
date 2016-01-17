@@ -25,10 +25,11 @@ proc promise::document {path args} {
     } {Loading and requirements} {
         The package requires Tcl 8.6 or later and is loaded with the
         standard command
+
             package require promise
 
-	All functionality related to promises requires the Tcl event loop
-	to be running.
+        All functionality related to promises requires the Tcl event loop
+        to be running.
     }
 
     lappend docs {Promises} {
@@ -199,6 +200,7 @@ proc promise::document {path args} {
     }
     ::ruff::document_namespaces html [namespace current] \
         -includesource true \
+        -hidesourcecomments true \
         -autolink false \
         -recurse true \
         -output $path \
@@ -208,5 +210,7 @@ proc promise::document {path args} {
         -preamble [dict create :: $introlist ::promise $doclist]
 }
 
-promise::document promise-[promise::version].html
+set dir [file join [file dirname [info script]] .. build]
+file mkdir $dir
+promise::document [file join $dir promise-[promise::version].html]
 
