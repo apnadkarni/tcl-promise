@@ -680,6 +680,30 @@ proc promise::_make_errval {args} {
     return [list $msg $edict]
 }
 
+proc promise::pfulfilled {value} {
+    # Returns a new promise that is already fulfilled with the specified value.
+    #  value - the value with which to fulfill the created promise
+    return [Promise new [lambda {value prom} {
+        $prom fulfill $value
+    } $value]]
+}
+
+proc promise::prejected {errorcode {errormessage {}}} {
+    # Returns a new promise that is already rejected
+    #  errorcode - A list of words in the form expected by the Tcl throw
+    #    command
+    #  errormessage - A human readable message. If an empty string, the last
+    #    word of $errorcode is also treated as the message
+    # By convention, values passed to reject reactions are a 
+    if {$errormessage ne ""} {
+        set errval [_make_errval {*}$errorcode $errormessage]
+    } else {
+        set errval [_make_errval {*}$errorcode]
+    }
+    return [Promise new [lambda {value prom} {
+        $prom reject $value
+    } $errval]]
+}
 proc promise::pgeturl {url args} {
     # Returns a promise that will be fulfilled when the specified URL is fetched
     #   url - the URL to fetch
@@ -694,8 +718,8 @@ proc promise::pgeturl {url args} {
     # the contents of the http state array.
     
     uplevel #0 {package require http}
-    proc [namespace current]::pgeturl {url args} {
-        set prom [promise::Promise new [lambda {http_args prom} {
+    proc pgeturl {url args} {
+        set prom [Promise new [lambda {http_args prom} {
             http::geturl {*}$http_args -command [promise::lambda {prom tok} {
                 upvar #0 $tok http_state
                 if {$http_state(status) eq "ok"} {
@@ -730,7 +754,7 @@ proc promise::ptimer {millisecs {value "Timer expired."}} {
     # Also see [ptimeout] which is similar but rejects the promise instead
     # of fulfilling it.
     
-    return [promise::Promise new [lambda {millisecs value prom} {
+    return [Promise new [lambda {millisecs value prom} {
         if {![string is integer $millisecs]} {
             # We don't want to accept "idle", "cancel" etc. for after
             throw {PROMISE TIMER INVALID} "Invalid timeout value \"$millisecs\"."
@@ -750,7 +774,7 @@ proc promise::ptimeout {millisecs {value "Operation timed out."}} {
     # Also see [ptimer] which is similar but fulfills the promise instead
     # of rejecting it.
 
-    return [promise::Promise new [lambda {millisecs value prom} {
+    return [Promise new [lambda {millisecs value prom} {
         if {![string is integer $millisecs]} {
             # We don't want to accept "idle", "cancel" etc. for after
             throw {PROMISE TIMER INVALID} "Invalid timeout value \"$millisecs\"."

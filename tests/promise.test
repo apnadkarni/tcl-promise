@@ -30,6 +30,24 @@ namespace eval promise::test {
         ::promise::version
     } -result 1.0a0
 
+    test pfulfilled-0 {pfulfilled} -body {
+        [promise::pfulfilled "Fulfill value"] done [handler]
+        wait
+        result
+    } -result {{Fulfill value} 0}
+    
+    test prejected-0 {prejected} -body {
+        [promise::prejected {PROMISE TEST REJECTED}] done [handler] [handler]
+        wait
+        errorcode
+    } -result {REJECTED {PROMISE TEST REJECTED} 0}
+    
+    test prejected-0 {prejected} -body {
+        [promise::prejected {PROMISE TEST REJECTED} "Error message"] done [handler] [handler]
+        wait
+        errorcode
+    } -result {{Error message} {PROMISE TEST REJECTED {Error message}} 0}
+
     test ptimer-0 {ptimer} -body {
         [promise::ptimer 100] done [handler]
         wait
