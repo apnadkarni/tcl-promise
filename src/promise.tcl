@@ -109,7 +109,7 @@ oo::class create promise::Promise {
                 uplevel #0 [linsert $cmd end [self]]
             }
         } msg edict]} {
-            my reject [list $msg $edict]
+            my reject [promise::edict_rejection $edict $msg]
         }
     }
 
@@ -228,7 +228,7 @@ oo::class create promise::Promise {
         if {[catch {
             $promise done [namespace code {my FulfillAttached}] [namespace code {my RejectAttached}]
         } msg edict]} {
-            my reject [list $msg $edict]
+            my reject [promise::edict_rejection $edict $msg]
         } else {
             set _state CHAINED
         }
@@ -444,7 +444,7 @@ proc promise::_then_reaction {target_promise status cmd value} {
             CHAINED -
             PENDING  -
             default {
-                $target_promise reject [promise::_make_errval PROMISE THEN STATE "Internal error: invalid status $state"]
+                $target_promise reject [promise::rejection {PROMISE THEN STATE} "Internal error: invalid status $state"]
             }
         }
     } else {
@@ -476,7 +476,7 @@ proc promise::_cleanup_reaction {target_promise cleaner state value} {
             CHAINED -
             PENDING  -
             default {
-                $target_promise reject [promise::_make_errval PROMISE THEN STATE "Internal error: invalid state $state"]
+                $target_promise reject [promise::rejection {PROMISE THEN STATE} "Internal error: invalid state $state"]
             }
         }
     } else {
@@ -639,7 +639,7 @@ proc promise::_all_helper {all_promise remaining_promises values resolution valu
             [list [namespace current]::_all_helper $all_promise $remaining_promises $values FULFILLED] \
             [list [namespace current]::_all_helper $all_promise $remaining_promises $values REJECTED]
     } msg edict]} {
-        $all_promise reject [list $msg $edict]
+        $all_promise reject [promise::edict_rejection $edict $msg]
     }
     return
 }
@@ -652,7 +652,7 @@ proc promise::race {promises} {
     # as the first promise in $promises that fulfills or rejects.
     set race_promise [Promise new [lambda {promises prom} {
         if {[llength $promises] == 0} {
-            $prom reject [promise::_make_errval PROMISE RACE EMPTYSET "Promise set is empty"]
+            $prom reject [promise::rejection {PROMISE RACE EMPTYSET} "Promise set is empty"]
             return
         }
         # Use safe_*, do not directly call methods since $prom may be
@@ -675,9 +675,27 @@ proc promise::race* {args} {
     return [race $args]
 }
 
-proc promise::_make_errval {args} {
-    catch {throw $args [lindex $args end]} msg edict
-    return [list $msg $edict]
+proc promise::edict_rejection {edict message} {
+    # Return a value to be used to reject a promise
+    #  edict - a Tcl error dictionary
+    #  message - an error message
+    # By convention, promises are rejected with a value that is
+    # in the format of a Tcl error dictionary with one additional
+    # key, 'error_message' which contains the error message.
+    # This command is used to construct such a value.
+    return [dict set edict error_message $message]
+}
+
+proc promise::rejection {errorcode message} {
+    # Return a value to be used to reject a promise
+    #  errorcode - an error code value in the format used for Tcl 'throw'
+    #  message - an error message
+    # By convention, promises are rejected with a value that is
+    # in the format of a Tcl error dictionary with one additional
+    # key, 'error_message' which contains the error message.
+    # This command is used to construct such a value.
+    catch {throw $errorcode $message} message edict
+    return [dict set edict error_message $message]
 }
 
 proc promise::pfulfilled {value} {
@@ -688,22 +706,16 @@ proc promise::pfulfilled {value} {
     } $value]]
 }
 
-proc promise::prejected {errorcode {errormessage {}}} {
+proc promise::prejected {value} {
     # Returns a new promise that is already rejected
-    #  errorcode - A list of words in the form expected by the Tcl throw
-    #    command
-    #  errormessage - A human readable message. If an empty string, the last
-    #    word of $errorcode is also treated as the message
-    # By convention, values passed to reject reactions are a 
-    if {$errormessage ne ""} {
-        set errval [_make_errval {*}$errorcode $errormessage]
-    } else {
-        set errval [_make_errval {*}$errorcode]
-    }
+    #  value - the value with which to reject the promise
+    # By convention, the $value should of the format returned by
+    # [rejection].
     return [Promise new [lambda {value prom} {
         $prom reject $value
-    } $errval]]
+    } $value]]
 }
+
 proc promise::pgeturl {url args} {
     # Returns a promise that will be fulfilled when the specified URL is fetched
     #   url - the URL to fetch
@@ -712,10 +724,10 @@ proc promise::pgeturl {url args} {
     # of the 'http' package. If the operation completes with a status of
     # 'ok', the returned promise is fulfilled with the contents of the
     # http state array (see the documentation of [http::geturl]). If the
-    # the status is anything else, the promise is rejected with a two
-    # element list consisting of the error message and dictionary. The
-    # 'http_state' key in the error dictionary contains
-    # the contents of the http state array.
+    # the status is anything else, the promise is rejected with a Tcl
+    # error dictionary with two additional keys, 'error_message'
+    # containing the error message and 'http_state', containing the
+    # contents of the http state array.
     
     uplevel #0 {package require http}
     proc pgeturl {url args} {
@@ -731,9 +743,9 @@ proc promise::pgeturl {url args} {
                     if {![info exists msg] || $msg eq ""} {
                         set msg "Error retrieving URL."
                     }
-                    lassign [promise::_make_errval PROMISE PGETURL $msg] msg edict
-                    dict set edict http_state [array get http_state]
-                    $prom reject [list $msg $edict]
+                    set errval [promise::rejection {PROMISE PGETURL} $msg]
+                    dict set errval http_state [array get http_state]
+                    $prom reject $errval
                 }
                 http::cleanup $tok
             } $prom]
@@ -749,8 +761,8 @@ proc promise::ptimer {millisecs {value "Timer expired."}} {
     #  millisecs - time interval in milliseconds
     #  value - the value with which the promise is to be fulfilled
     # In case of errors (e.g. if $milliseconds is not an integer), the
-    # promise is rejected with an error value consisting of the error message
-    # and an error dictionary.
+    # promise is rejected with an Tcl error dictionary with an
+    # additional key 'error_message' containing the error message.
     # Also see [ptimeout] which is similar but rejects the promise instead
     # of fulfilling it.
     
@@ -769,8 +781,8 @@ proc promise::ptimeout {millisecs {value "Operation timed out."}} {
     #  millisecs - time interval in milliseconds
     #  value - the value with which the promise is to be rejected
     # In case of errors (e.g. if $milliseconds is not an integer), the
-    # promise is rejected with an error value consisting of the error message
-    # and an error dictionary.
+    # promise is rejected with an Tcl error dictionary with an
+    # additional key 'error_message' containing the error message.
     # Also see [ptimer] which is similar but fulfills the promise instead
     # of rejecting it.
 
@@ -781,7 +793,7 @@ proc promise::ptimeout {millisecs {value "Operation timed out."}} {
         }
         after $millisecs [::promise::lambda {prom msg} {
             catch {throw {PROMISE TIMER EXPIRED} $msg} msg edict
-            ::promise::safe_reject $prom [list $msg $edict]
+            ::promise::safe_reject $prom [promise::rejection {PROMISE TIMER EXPIRED} $msg]
         } $prom $value]
     } $millisecs $value]]
 }
@@ -794,8 +806,8 @@ proc promise::pconnect {args} {
     # If the connection completes, the promise is fulfilled with the
     # socket handle.
     # In case of errors (e.g. if the address cannot be fulfilled), the
-    # promise is rejected with an error value consisting of the error message
-    # and an error dictionary.
+    # promise is rejected with an Tcl error dictionary with an
+    # additional key 'error_message' containing the error message.
     # 
     return [Promise new [lambda {so_args prom} {
         set so [socket -async {*}$so_args]
@@ -805,7 +817,7 @@ proc promise::pconnect {args} {
             if {$err eq ""} {
                 $prom fulfill $so
             } else {
-                $prom reject [::promise::_make_errval PROMISE PCONNECT $err]
+                $prom reject [::promise::rejection {PROMISE PCONNECT} $err]
             }
         } $prom $so]
     } $args]]
@@ -828,7 +840,7 @@ proc promise::_read_channel {prom chan data} {
         close $chan
     } result edict]
     if {$code} {
-        safe_reject $prom [list $result $edict]
+        safe_reject $prom [edict_rejection $edict $result]
     } else {
         safe_fulfill $prom $data
     }
@@ -839,9 +851,9 @@ proc promise::pexec {args} {
     #  args - program and its arguments as passed to the Tcl 'open' call
     #    for creating pipes
     # If the program runs without errors, the promise is fulfilled by its
-    # standard output content. Otherwise the promise is rejected with
-    # an error value consisting of an error message and dictionary
-    # detailing the failure.
+    # standard output content. Otherwise
+    # promise is rejected with an Tcl error dictionary with an
+    # additional key 'error_message' containing the error message.
     #
     # Returns a promise that will be settled by the result of the program
     return [Promise new [lambda {open_args prom} {
@@ -893,8 +905,8 @@ proc promise::ptask {script} {
     # thread. The promise returned from this command will be fulfilled
     # with the result of the script if it completes
     # successfully. Otherwise, the promise will be rejected with an
-    # error value that is a pair containing the error message and
-    # error dictionary from the script failure.
+    # error dictionary from the script failure with an additional key
+    # 'error_message' which contains the error message.
     #
     # Note that $script is a standalone script in that it is executed
     # in a new thread with a virgin Tcl interpreter. Any packages used
@@ -908,7 +920,7 @@ proc promise::ptask {script} {
         return [Promise new [lambda {script prom} {
             set thread_script [string map [list %PROM% $prom %TID% [thread::id] %SCRIPT% $script] {
                 if {[catch {%SCRIPT%} result edict]} {
-                    set response [list ::promise::safe_reject %PROM% [list $result $edict]]
+                    set response [list ::promise::safe_reject %PROM% [dict set edict error_message $result]]
                 } else {
                     set response [list ::promise::safe_fulfill %PROM% $result]
                 }
@@ -927,14 +939,14 @@ proc promise::pworker {tpool script} {
     #   script - script to run in the worker thread
     # Returns a promise that will be settled by the result of the script
     #
-    # The Thread package allows creation of a thread pool
-    # with the 'tpool create' command. The `pworker` command runs the
-    # specified script in a worker thread from a thread pool. The promise
-    # returned from this command will be fulfilled with the
-    # result of the script if it completes successfully. Otherwise,
-    # the promise will be rejected with an error value that is a pair
-    # containing the error message and error dictionary from the script
-    # failure.
+    # The Thread package allows creation of a thread pool with the
+    # 'tpool create' command. The `pworker` command runs the specified
+    # script in a worker thread from a thread pool. The promise
+    # returned from this command will be fulfilled with the result of
+    # the script if it completes successfully. Otherwise, the promise
+    # will be rejected with an error dictionary from the script
+    # failure with an additional key 'error_message' which contains
+    # the error message.
     #
     # Note that $script is a standalone script in that it is executed
     # in a new thread with a virgin Tcl interpreter. Any packages used
@@ -946,7 +958,7 @@ proc promise::pworker {tpool script} {
     return [Promise new [lambda {tpool script prom} {
         set thread_script [string map [list %PROM% $prom %TID% [thread::id] %SCRIPT% $script] {
             if {[catch {%SCRIPT%} result edict]} {
-                set response [list ::promise::safe_reject %PROM% [list $result $edict]]
+                set response [list ::promise::safe_reject %PROM% [dict set edict error_message $result]]
             } else {
                 set response [list ::promise::safe_fulfill %PROM% $result]
             }

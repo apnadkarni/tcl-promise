@@ -19,11 +19,11 @@ namespace eval promise::test {
         return [list [set $var] [npromises]]
     }
     proc errorresult {{var ::result}} {
-        return [list [lindex [set $var] 0] [npromises]]
+        return [list [dict get [set $var] error_message] [npromises]]
     }
     proc errorcode {{var ::result}} {
         set val [set $var]
-        return [list [lindex $val 0] [dict get [lindex $val 1] -errorcode] [npromises]]
+        return [list [dict get $val error_message] [dict get $val -errorcode] [npromises]]
     }
     
     test version-0 {Test the version} -body {
@@ -37,16 +37,10 @@ namespace eval promise::test {
     } -result {{Fulfill value} 0}
     
     test prejected-0 {prejected} -body {
-        [promise::prejected {PROMISE TEST REJECTED}] done [handler] [handler]
+        [promise::prejected [promise::rejection {PROMISE TEST REJECTED} "Error message"]] done [handler] [handler]
         wait
         errorcode
-    } -result {REJECTED {PROMISE TEST REJECTED} 0}
-    
-    test prejected-0 {prejected} -body {
-        [promise::prejected {PROMISE TEST REJECTED} "Error message"] done [handler] [handler]
-        wait
-        errorcode
-    } -result {{Error message} {PROMISE TEST REJECTED {Error message}} 0}
+    } -result {{Error message} {PROMISE TEST REJECTED} 0}
 
     test ptimer-0 {ptimer} -body {
         [promise::ptimer 100] done [handler]
@@ -105,8 +99,7 @@ namespace eval promise::test {
     test pgeturl-2 {pgeturl - failure} -body {
         [promise::pgeturl http://127.0.0.1:1234] done [handler] [handler]
         wait
-        lassign $::result msg edict
-        list $msg [dict exists $edict http_state] [npromises]
+        list [dict get $::result error_message] [dict exists $::result http_state] [npromises]
     } -result [list {connect failed connection refused} 1 0]
 
     test ptask-0 {ptask} -body {
@@ -169,7 +162,7 @@ namespace eval promise::test {
         [promise::pconnect 127.0.0.1 1234] done [handler] [handler]
         wait
         errorcode
-    } -result [list {connection refused} {PROMISE PCONNECT {connection refused}} 0]
+    } -result [list {connection refused} {PROMISE PCONNECT} 0]
 
     test all-0 {all} -setup {
         set p1 [promise::ptimer 100 p1]
@@ -287,7 +280,7 @@ namespace eval promise::test {
         [promise::race [list ]] done [handler] [handler]
         wait
         errorcode
-    } -result {{Promise set is empty} {PROMISE RACE EMPTYSET {Promise set is empty}} 0}
+    } -result {{Promise set is empty} {PROMISE RACE EMPTYSET} 0}
         
     test race*-0 {race*} -setup {
         set p1 [promise::ptimer 100 p1]
@@ -341,7 +334,7 @@ namespace eval promise::test {
         [promise::race*] done [handler] [handler]
         wait
         errorcode
-    } -result {{Promise set is empty} {PROMISE RACE EMPTYSET {Promise set is empty}} 0}
+    } -result {{Promise set is empty} {PROMISE RACE EMPTYSET} 0}
         
 }
 
