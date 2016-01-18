@@ -652,7 +652,7 @@ proc promise::race {promises} {
     # as the first promise in $promises that fulfills or rejects.
     set race_promise [Promise new [lambda {promises prom} {
         if {[llength $promises] == 0} {
-            $prom reject [_make_errval PROMISE RACE EMPTYSET "Promise set is empty"]
+            $prom reject [promise::_make_errval PROMISE RACE EMPTYSET "Promise set is empty"]
             return
         }
         # Use safe_*, do not directly call methods since $prom may be

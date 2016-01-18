@@ -26,84 +26,84 @@ namespace eval promise::test {
         return [list [lindex $val 0] [dict get [lindex $val 1] -errorcode] [npromises]]
     }
     
-    test version-1.0 {Test the version} -body {
+    test version-0 {Test the version} -body {
         ::promise::version
     } -result 1.0a0
 
-    test ptimer-1.0 {ptimer} -body {
+    test ptimer-0 {ptimer} -body {
         [promise::ptimer 100] done [handler]
         wait
         result
     } -result {{Timer expired.} 0}
     
-    test ptimer-1.1 {ptimer - invalid timer value} -body {
+    test ptimer-1 {ptimer - invalid timer value} -body {
         [promise::ptimer idle] done "" [handler]
         wait
         errorresult
     } -result [list "Invalid timeout value \"idle\"." 0]
     
-    test ptimeout-1.0 {ptimeout} -body {
+    test ptimeout-0 {ptimeout} -body {
         [promise::ptimeout 100] done "" [handler]
         wait
         errorcode
     } -result {{Operation timed out.} {PROMISE TIMER EXPIRED} 0}
 
-    test ptimeout-1.1 {ptimeout - invalid timer value} -body {
+    test ptimeout-1 {ptimeout - invalid timer value} -body {
         [promise::ptimeout idle] done "" [handler]
         wait
         errorcode
     } -result {{Invalid timeout value "idle".} {PROMISE TIMER INVALID} 0}
 
-    test pexec-1.0 {pexec} -body {
-        [promise::pexec cmd /c echo pexec-1.0] done [handler]
+    test pexec-0 {pexec} -body {
+        [promise::pexec cmd /c echo pexec-0] done [handler]
         wait
         result
-    } -result [list "pexec-1.0\n" 0]
+    } -result [list "pexec-0\n" 0]
         
-    test pexec-1.1 {pexec fail in constructor} -body {
+    test pexec-1 {pexec fail in constructor} -body {
         [promise::pexec nosuchcommand.exe] done [handler] [handler]
         wait
         errorcode
     } -result [list {couldn't execute "nosuchcommand.exe": no such file or directory} {POSIX ENOENT {no such file or directory}} 0]
 
-    test pexec-1.2 {pexec fail} -body {
+    test pexec-2 {pexec fail} -body {
         [promise::pexec cmd /c nosuchcommand.exe] done [handler] [handler]
         wait
         errorresult
     } -result [list "'nosuchcommand.exe' is not recognized as an internal or external command,\noperable program or batch file." 0]
 
-    test pgeturl-1.0 {pgeturl} -body {
+    test pgeturl-0 {pgeturl} -body {
         [promise::pgeturl http://www.google.com] done [handler] [handler]
         wait
         list [dict exists $::result body] [dict get $::result status] [npromises]
     } -result {1 ok 0}
 
-    test pgeturl-1.1 {pgeturl - constructor failure} -body {
+    test pgeturl-1 {pgeturl - constructor failure} -body {
         [promise::pgeturl httpx://www.google.com] done [handler] [handler]
         wait
         errorcode
     } -result [list {Unsupported URL type "httpx"} NONE 0]
 
-    test pgeturl-1.2 {pgeturl - failure} -body {
+    test pgeturl-2 {pgeturl - failure} -body {
         [promise::pgeturl http://127.0.0.1:1234] done [handler] [handler]
         wait
         lassign $::result msg edict
         list $msg [dict exists $edict http_state] [npromises]
     } -result [list {connect failed connection refused} 1 0]
 
-    test ptask-1.0 {ptask} -body {
+    test ptask-0 {ptask} -body {
         [promise::ptask {expr 2+3}] done [handler] [handler]
         wait
         result
     } -result {5 0}
 
-    test ptask-1.1 {ptask} -body {
+    test ptask-1 {ptask} -body {
         [promise::ptask {throw {PROMISE TEST} "Error in task"}] done [handler] [handler]
         wait
         errorcode
     } -result {{Error in task} {PROMISE TEST} 0}
 
-    test pworker-1.0 {pworker} -setup {
+    test pworker-0 {pworker} -setup {
         package require Thread
         set tpool [tpool::create]
         tpool::preserve $tpool
@@ -115,7 +115,7 @@ namespace eval promise::test {
         result
     } -result {5 0}
 
-    test pworker-1.1 {pworker - constructor failure} -setup {
+    test pworker-1 {pworker - constructor failure} -setup {
         package require Thread
     } -body {
         [promise::pworker badtpoolid {throw {PROMISE TEST} "Error in task"}] done [handler] [handler]
@@ -123,7 +123,7 @@ namespace eval promise::test {
         errorcode
     } -result {{can not find threadpool "badtpoolid"} NONE 0}
 
-    test pworker-1.2 {pworker - failure} -setup {
+    test pworker-2 {pworker - failure} -setup {
         package require Thread
         set tpool [tpool::create]
         tpool::preserve $tpool
@@ -135,23 +135,196 @@ namespace eval promise::test {
         errorcode
     } -result {{Error in task} {PROMISE TEST} 0}
 
-    test pconnect-1.0 {pconnect} -body {
+    test pconnect-0 {pconnect} -body {
         [promise::pconnect www.yahoo.com 80] done [handler] [handler]
         wait
         list [close $::result] [npromises]
     } -result [list "" 0]
 
-    test pconnect-1.1 {pconnect - constructor failure} -body {
+    test pconnect-1 {pconnect - constructor failure} -body {
         [promise::pconnect www.yahoo.com notaport] done [handler] [handler]
         wait
         errorcode
     } -result [list {expected integer but got "notaport"} {TCL VALUE NUMBER} 0]
 
-    test pconnect-1.2 {pconnect - failure} -body {
+    test pconnect-2 {pconnect - failure} -body {
         [promise::pconnect 127.0.0.1 1234] done [handler] [handler]
         wait
         errorcode
     } -result [list {connection refused} {PROMISE PCONNECT {connection refused}} 0]
+
+    test all-0 {all} -setup {
+        set p1 [promise::ptimer 100 p1]
+        set p2 [promise::ptimer 200 p2]
+    } -body {
+        # Note p2 which expires later is listed first
+        [promise::all [list $p2 $p1]] done [handler] [handler]
+        wait
+        result
+    } -result {{p2 p1} 0}
+    
+    test all-1 {all - constructor failure} -setup {
+        set p1 [promise::ptimer 100 p1]
+    } -body {
+        [promise::all [list $p1 notapromise]] done [handler] [handler]
+        wait
+        errorcode
+    } -result {{invalid command name "notapromise"} {TCL LOOKUP COMMAND notapromise} 0}
+    
+    test all-2 {all - reject} -setup {
+        set p1 [promise::ptimer 100 p1]
+        set p2 [promise::ptimeout 200 p2]
+    } -body {
+        # Note p2 which rejects later is listed last
+        [promise::all [list $p1 $p2]] done [handler] [handler]
+        wait
+        errorcode
+    } -result {p2 {PROMISE TIMER EXPIRED} 0}
+    
+    test all-3 {all} -body {
+        [promise::all [list ]] done [handler] [handler]
+        wait
+        result
+    } -result {{} 0}
+
+    test all*-0 {all*} -body {
+        [promise::all* [promise::ptimer 200 p2] [promise::ptimer 100 p1] [promise::ptimer 300 p3]] done [handler] [handler]
+        wait
+        result
+    } -result {{p2 p1 p3} 0}
+    
+    test all*-1 {all* - constructor failure} -setup {
+        set p1 [promise::ptimer 100 p1]
+    } -body {
+        [promise::all* $p1 notapromise] done [handler] [handler]
+        wait
+        errorcode
+    } -result {{invalid command name "notapromise"} {TCL LOOKUP COMMAND notapromise} 0}
+    
+    test all*-2 {all* - reject} -setup {
+        set p1 [promise::ptimer 100 p1]
+        set p2 [promise::ptimeout 200 p2]
+    } -body {
+        # Note p2 which rejects later is listed last
+        [promise::all* $p1 $p2] done [handler] [handler]
+        wait
+        errorcode
+    } -result {p2 {PROMISE TIMER EXPIRED} 0}
+
+    test all*-3 {all} -body {
+        [promise::all*] done [handler] [handler]
+        wait
+        result
+    } -result {{} 0}
+
+    test race-0 {race} -setup {
+        set p1 [promise::ptimer 100 p1]
+        set p2 [promise::ptimer 200 p2]
+        set p3 [promise::ptimer 200 p2]
+    } -body {
+        [promise::race [list $p2 $p1 $p3]] done [handler] [handler]
+        wait
+        # Wait for other promise to expire since need to check it is gc'ed
+        after 200 set ::done 1
+        vwait ::done
+        result
+    } -result {p1 0}
+    
+    test race-1 {race - constructor failure} -setup {
+        set p1 [promise::ptimer 100 p1]
+    } -body {
+        [promise::race [list $p1 notapromise]] done [handler] [handler]
+        wait
+        # Wait for other promise to expire since need to check it is gc'ed
+        after 200 set ::done 1
+        vwait ::done
+        errorcode
+    } -result {{invalid command name "notapromise"} {TCL LOOKUP COMMAND notapromise} 0}
+    
+    test race-2 {race - verify first to fulfill/reject wins} -setup {
+        set p1 [promise::ptimeout 100 p1]
+        set p2 [promise::ptimer 200 p2]
+    } -body {
+        [promise::race [list $p1 $p2]] done [handler] [handler]
+        wait
+        # Wait for other promise to expire since need to check it is gc'ed
+        after 200 set ::done 1
+        vwait ::done
+        errorcode
+    } -result {p1 {PROMISE TIMER EXPIRED} 0}
+    
+    test race-3 {race - verify first to fulfill/reject wins} -setup {
+        set p1 [promise::ptimeout 200 p1]
+        set p2 [promise::ptimer 100 p2]
+    } -body {
+        [promise::race [list $p1 $p2]] done [handler] [handler]
+        wait
+        # Wait for other promise to expire since need to check it is gc'ed
+        after 200 set ::done 1
+        vwait ::done
+        result
+    } -result {p2 0}
+    
+    test race-4 {race - empty promise set} -body {
+        [promise::race [list ]] done [handler] [handler]
+        wait
+        errorcode
+    } -result {{Promise set is empty} {PROMISE RACE EMPTYSET {Promise set is empty}} 0}
+        
+    test race*-0 {race*} -setup {
+        set p1 [promise::ptimer 100 p1]
+        set p2 [promise::ptimer 200 p2]
+        set p3 [promise::ptimer 200 p2]
+    } -body {
+        [promise::race* $p2 $p1 $p3] done [handler] [handler]
+        wait
+        # Wait for other promise to expire since need to check it is gc'ed
+        after 200 set ::done 1
+        vwait ::done
+        result
+    } -result {p1 0}
+    
+    test race*-1 {race* - constructor failure} -setup {
+        set p1 [promise::ptimer 100 p1]
+    } -body {
+        [promise::race* $p1 notapromise] done [handler] [handler]
+        wait
+        # Wait for other promise to expire since need to check it is gc'ed
+        after 200 set ::done 1
+        vwait ::done
+        errorcode
+    } -result {{invalid command name "notapromise"} {TCL LOOKUP COMMAND notapromise} 0}
+    
+    test race*-2 {race* - verify first to fulfill/reject wins} -setup {
+        set p1 [promise::ptimeout 100 p1]
+        set p2 [promise::ptimer 200 p2]
+    } -body {
+        [promise::race* $p1 $p2] done [handler] [handler]
+        wait
+        # Wait for other promise to expire since need to check it is gc'ed
+        after 200 set ::done 1
+        vwait ::done
+        errorcode
+    } -result {p1 {PROMISE TIMER EXPIRED} 0}
+    
+    test race*-3 {race* - verify first to fulfill/reject wins} -setup {
+        set p1 [promise::ptimeout 200 p1]
+        set p2 [promise::ptimer 100 p2]
+    } -body {
+        [promise::race* $p1 $p2] done [handler] [handler]
+        wait
+        # Wait for other promise to expire since need to check it is gc'ed
+        after 200 set ::done 1
+        vwait ::done
+        result
+    } -result {p2 0}
+    
+    test race*-4 {race* - empty promise set} -body {
+        [promise::race*] done [handler] [handler]
+        wait
+        errorcode
+    } -result {{Promise set is empty} {PROMISE RACE EMPTYSET {Promise set is empty}} 0}
+        
 }
 
 
