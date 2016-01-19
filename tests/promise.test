@@ -25,6 +25,9 @@ namespace eval promise::test {
         set val [set $var]
         return [list [dict get $val error_message] [dict get $val -errorcode] [npromises]]
     }
+    proc bgerror {msg edict} {
+        set ::result "bgerror: $msg"
+    }
     
     test version-0 {Test the version} -body {
         ::promise::version
@@ -43,7 +46,7 @@ namespace eval promise::test {
     } -result {{Error message} {PROMISE TEST REJECTED} 0}
 
     test ptimer-0 {ptimer} -body {
-        [promise::ptimer 100] done [handler]
+        [promise::ptimer 50] done [handler]
         wait
         result
     } -result {{Timer expired.} 0}
@@ -55,7 +58,7 @@ namespace eval promise::test {
     } -result [list "Invalid timeout value \"idle\"." 0]
     
     test ptimeout-0 {ptimeout} -body {
-        [promise::ptimeout 100] done "" [handler]
+        [promise::ptimeout 50] done "" [handler]
         wait
         errorcode
     } -result {{Operation timed out.} {PROMISE TIMER EXPIRED} 0}
@@ -165,8 +168,8 @@ namespace eval promise::test {
     } -result [list {connection refused} {PROMISE PCONNECT} 0]
 
     test all-0 {all} -setup {
-        set p1 [promise::ptimer 100 p1]
-        set p2 [promise::ptimer 200 p2]
+        set p1 [promise::ptimer 50 p1]
+        set p2 [promise::ptimer 100 p2]
     } -body {
         # Note p2 which expires later is listed first
         [promise::all [list $p2 $p1]] done [handler] [handler]
@@ -175,7 +178,7 @@ namespace eval promise::test {
     } -result {{p2 p1} 0}
     
     test all-1 {all - constructor failure} -setup {
-        set p1 [promise::ptimer 100 p1]
+        set p1 [promise::ptimer 50 p1]
     } -body {
         [promise::all [list $p1 notapromise]] done [handler] [handler]
         wait
@@ -183,8 +186,8 @@ namespace eval promise::test {
     } -result {{invalid command name "notapromise"} {TCL LOOKUP COMMAND notapromise} 0}
     
     test all-2 {all - reject} -setup {
-        set p1 [promise::ptimer 100 p1]
-        set p2 [promise::ptimeout 200 p2]
+        set p1 [promise::ptimer 50 p1]
+        set p2 [promise::ptimeout 100 p2]
     } -body {
         # Note p2 which rejects later is listed last
         [promise::all [list $p1 $p2]] done [handler] [handler]
@@ -199,13 +202,13 @@ namespace eval promise::test {
     } -result {{} 0}
 
     test all*-0 {all*} -body {
-        [promise::all* [promise::ptimer 200 p2] [promise::ptimer 100 p1] [promise::ptimer 300 p3]] done [handler] [handler]
+        [promise::all* [promise::ptimer 100 p2] [promise::ptimer 50 p1] [promise::ptimer 300 p3]] done [handler] [handler]
         wait
         result
     } -result {{p2 p1 p3} 0}
     
     test all*-1 {all* - constructor failure} -setup {
-        set p1 [promise::ptimer 100 p1]
+        set p1 [promise::ptimer 50 p1]
     } -body {
         [promise::all* $p1 notapromise] done [handler] [handler]
         wait
@@ -213,8 +216,8 @@ namespace eval promise::test {
     } -result {{invalid command name "notapromise"} {TCL LOOKUP COMMAND notapromise} 0}
     
     test all*-2 {all* - reject} -setup {
-        set p1 [promise::ptimer 100 p1]
-        set p2 [promise::ptimeout 200 p2]
+        set p1 [promise::ptimer 50 p1]
+        set p2 [promise::ptimeout 100 p2]
     } -body {
         # Note p2 which rejects later is listed last
         [promise::all* $p1 $p2] done [handler] [handler]
@@ -229,49 +232,49 @@ namespace eval promise::test {
     } -result {{} 0}
 
     test race-0 {race} -setup {
-        set p1 [promise::ptimer 100 p1]
-        set p2 [promise::ptimer 200 p2]
-        set p3 [promise::ptimer 200 p2]
+        set p1 [promise::ptimer 50 p1]
+        set p2 [promise::ptimer 100 p2]
+        set p3 [promise::ptimer 100 p2]
     } -body {
         [promise::race [list $p2 $p1 $p3]] done [handler] [handler]
         wait
         # Wait for other promise to expire since need to check it is gc'ed
-        after 200 set ::done 1
+        after 100 set ::done 1
         vwait ::done
         result
     } -result {p1 0}
     
     test race-1 {race - constructor failure} -setup {
-        set p1 [promise::ptimer 100 p1]
+        set p1 [promise::ptimer 50 p1]
     } -body {
         [promise::race [list $p1 notapromise]] done [handler] [handler]
         wait
         # Wait for other promise to expire since need to check it is gc'ed
-        after 200 set ::done 1
+        after 100 set ::done 1
         vwait ::done
         errorcode
     } -result {{invalid command name "notapromise"} {TCL LOOKUP COMMAND notapromise} 0}
     
     test race-2 {race - verify first to fulfill/reject wins} -setup {
-        set p1 [promise::ptimeout 100 p1]
-        set p2 [promise::ptimer 200 p2]
-    } -body {
-        [promise::race [list $p1 $p2]] done [handler] [handler]
-        wait
-        # Wait for other promise to expire since need to check it is gc'ed
-        after 200 set ::done 1
-        vwait ::done
-        errorcode
-    } -result {p1 {PROMISE TIMER EXPIRED} 0}
-    
-    test race-3 {race - verify first to fulfill/reject wins} -setup {
-        set p1 [promise::ptimeout 200 p1]
+        set p1 [promise::ptimeout 50 p1]
         set p2 [promise::ptimer 100 p2]
     } -body {
         [promise::race [list $p1 $p2]] done [handler] [handler]
         wait
         # Wait for other promise to expire since need to check it is gc'ed
-        after 200 set ::done 1
+        after 100 set ::done 1
+        vwait ::done
+        errorcode
+    } -result {p1 {PROMISE TIMER EXPIRED} 0}
+    
+    test race-3 {race - verify first to fulfill/reject wins} -setup {
+        set p1 [promise::ptimeout 100 p1]
+        set p2 [promise::ptimer 50 p2]
+    } -body {
+        [promise::race [list $p1 $p2]] done [handler] [handler]
+        wait
+        # Wait for other promise to expire since need to check it is gc'ed
+        after 100 set ::done 1
         vwait ::done
         result
     } -result {p2 0}
@@ -283,49 +286,49 @@ namespace eval promise::test {
     } -result {{Promise set is empty} {PROMISE RACE EMPTYSET} 0}
         
     test race*-0 {race*} -setup {
-        set p1 [promise::ptimer 100 p1]
-        set p2 [promise::ptimer 200 p2]
-        set p3 [promise::ptimer 200 p2]
+        set p1 [promise::ptimer 50 p1]
+        set p2 [promise::ptimer 100 p2]
+        set p3 [promise::ptimer 100 p2]
     } -body {
         [promise::race* $p2 $p1 $p3] done [handler] [handler]
         wait
         # Wait for other promise to expire since need to check it is gc'ed
-        after 200 set ::done 1
+        after 100 set ::done 1
         vwait ::done
         result
     } -result {p1 0}
     
     test race*-1 {race* - constructor failure} -setup {
-        set p1 [promise::ptimer 100 p1]
+        set p1 [promise::ptimer 50 p1]
     } -body {
         [promise::race* $p1 notapromise] done [handler] [handler]
         wait
         # Wait for other promise to expire since need to check it is gc'ed
-        after 200 set ::done 1
+        after 100 set ::done 1
         vwait ::done
         errorcode
     } -result {{invalid command name "notapromise"} {TCL LOOKUP COMMAND notapromise} 0}
     
     test race*-2 {race* - verify first to fulfill/reject wins} -setup {
-        set p1 [promise::ptimeout 100 p1]
-        set p2 [promise::ptimer 200 p2]
-    } -body {
-        [promise::race* $p1 $p2] done [handler] [handler]
-        wait
-        # Wait for other promise to expire since need to check it is gc'ed
-        after 200 set ::done 1
-        vwait ::done
-        errorcode
-    } -result {p1 {PROMISE TIMER EXPIRED} 0}
-    
-    test race*-3 {race* - verify first to fulfill/reject wins} -setup {
-        set p1 [promise::ptimeout 200 p1]
+        set p1 [promise::ptimeout 50 p1]
         set p2 [promise::ptimer 100 p2]
     } -body {
         [promise::race* $p1 $p2] done [handler] [handler]
         wait
         # Wait for other promise to expire since need to check it is gc'ed
-        after 200 set ::done 1
+        after 100 set ::done 1
+        vwait ::done
+        errorcode
+    } -result {p1 {PROMISE TIMER EXPIRED} 0}
+    
+    test race*-3 {race* - verify first to fulfill/reject wins} -setup {
+        set p1 [promise::ptimeout 100 p1]
+        set p2 [promise::ptimer 50 p2]
+    } -body {
+        [promise::race* $p1 $p2] done [handler] [handler]
+        wait
+        # Wait for other promise to expire since need to check it is gc'ed
+        after 100 set ::done 1
         vwait ::done
         result
     } -result {p2 0}
@@ -336,13 +339,84 @@ namespace eval promise::test {
         errorcode
     } -result {{Promise set is empty} {PROMISE RACE EMPTYSET} 0}
         
+    # Note basic done operation is already tested by above tests
+    test done-0 {done - background error} -setup {
+        set bgerror [interp bgerror {}]
+        interp bgerror {} [namespace current]::bgerror
+        set p1 [promise::ptimeout 10 p1]
+    } -cleanup {
+        interp bgerror {} $bgerror
+    } -body {
+        $p1 done [handler]
+        wait
+        result
+    } -result {{bgerror: p1} 0}
+    
+    test done-1 {done - background error} -setup {
+        set bgerror [interp bgerror {}]
+        interp bgerror {} [namespace current]::bgerror
+        set p1 [promise::ptimeout 10 p1]
+    } -cleanup {
+        interp bgerror {} $bgerror
+    } -body {
+        set p2 [$p1 then [handler]]
+        $p2 done handler
+        wait
+        result
+    } -result {{bgerror: p1} 0}
+    
     test then-0 {then fulfill} -setup {
-        set p1 [promise::ptimer 100 p1]
+        set p1 [promise::ptimer 50 p1]
     } -body {
         [$p1 then lindex] done [handler]
         wait
         result
     } -result {p1 0}
+
+    test then-1 {then reject} -setup {
+        set p1 [promise::ptimeout 50 p1]
+    } -body {
+        [$p1 then "" lindex] done [handler]
+        wait
+        # The second stage hander is a fulfillment handler but the
+        # value is in rejection format so we use [errorcode] to get result
+        errorcode
+    } -result {p1 {PROMISE TIMER EXPIRED} 0}
+
+    test then-2 {then fulfill fulfill} -setup {
+        set p1 [promise::ptimer 50 p1]
+    } -body {
+        [[$p1 then lindex] then lindex] done [handler]
+        wait
+        result
+    } -result {p1 0}
+
+    test then-3 {then fulfill reject} -setup {
+        set p1 [promise::ptimer 50 p1]
+    } -body {
+        [[$p1 then error] then "" lindex] done [handler]
+        wait
+        errorcode
+    } -result {p1 NONE 0}
+    
+    test then-3.1 {then fulfill reject} -setup {
+        set p1 [promise::ptimer 50 p1]
+    } -body {
+        set p2 [$p1 then error]
+        set p3 [$p2 then "" lindex]
+        $p3 done [handler]
+        wait
+        errorcode
+    } -result {p1 NONE 0}
+    
+    test then-4 {then reject fulfill} -setup {
+        set p1 [promise::ptimeout 50 p1]
+    } -body {
+        [[$p1 then "" lindex] then lindex] done [handler]
+        wait
+        errorcode
+    } -result {p1 {PROMISE TIMER EXPIRED} 0}
+    
 }
 
 
