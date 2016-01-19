@@ -270,8 +270,20 @@ oo::class create promise::Promise {
             return
         }
 
-        set _do_gc 0
+        # Note on garbage collection: garbage collection is to be enabled if
+        #   (1) at least one FULFILLED or REJECTED reaction is run,
+        #   (2) the promise is REJECTED but only FULFILLED reactions are
+        #     registered. In this case we also schedule a background error.
+        # In all cases, CLEANUP reactions do not count.
+        set have_fulfill_reaction 0
+        set have_reject_reaction 0
         foreach reaction $_reactions {
+            if {[llength [dict get $reaction FULFILLED]]} {
+                set have_fulfill_reaction 1
+            }
+            if {[llength [dict get $reaction REJECTED]]} {
+                set have_reject_reaction 1
+            }
             set cmd [dict get $reaction $_state]
             if {[llength $cmd]} {
                 # Enqueue the reaction via the event loop passing $_value
@@ -287,6 +299,31 @@ oo::class create promise::Promise {
             }
         }
         set _reactions [list ]
+
+        # See (2) above
+        if {$_state eq "REJECTED" && $have_fulfill_reaction && ! $have_reject_reaction} {
+            # Wrap in catch in case $_value does not follow error conventions
+            # TBD - actually should we also check _nrefs before backgrounding
+            # error?
+            catch {
+                if {[dict exists $_value -level] && [dict exists $_value -code]} {
+                    set eopts $_value
+                    if {[dict exists $_value error_message]} {
+                        set error_message [dict get $_value error_message]
+                        dict unset $eopts error_message
+                    } else {
+                        set error_message "Unknown error"
+                    }
+                }
+            }
+            if {![info exists eopts]} {
+                set eopts {-level 1 -code 1}
+                set error_message $_value
+            }
+            after idle [interp bgerror {}] [list $error_message $eopts]
+            set _do_gc 1
+        }
+        
         my GC
         return 
     } 

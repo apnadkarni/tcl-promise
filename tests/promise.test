@@ -336,6 +336,13 @@ namespace eval promise::test {
         errorcode
     } -result {{Promise set is empty} {PROMISE RACE EMPTYSET} 0}
         
+    test then-0 {then fulfill} -setup {
+        set p1 [promise::ptimer 100 p1]
+    } -body {
+        [$p1 then lindex] done [handler]
+        wait
+        result
+    } -result {p1 0}
 }
 
 
