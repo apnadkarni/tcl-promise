@@ -109,7 +109,7 @@ oo::class create promise::Promise {
                 uplevel #0 [linsert $cmd end [self]]
             }
         } msg edict]} {
-            my reject [promise::edict_rejection $edict $msg]
+            my reject $msg $edict
         }
     }
 
@@ -228,7 +228,7 @@ oo::class create promise::Promise {
         if {[catch {
             $promise done [namespace code {my FulfillAttached}] [namespace code {my RejectAttached}]
         } msg edict]} {
-            my reject [promise::edict_rejection $edict $msg]
+            my reject $msg $edict
         } else {
             set _state CHAINED
         }
@@ -236,11 +236,23 @@ oo::class create promise::Promise {
         return 1
     }
 
-    method reject {errval} {
+    method reject {value {edict {}}} {
         # Rejects the promise
-        #   errval - the value with which the promise is rejected.
-        #     By convention, $errval should be a list consisting of an error
-        #     message and error dictionary.
+        #   value - value to be passed to rejection reaction if $edict
+        #      is not specified or an empty string.
+        #   edict - a Tcl error dictionary to be used to compose the rejection
+        #      value
+        #
+        # By convention, the value passed to a rejection reaction should
+        # be an Tcl error dictionary with an additional key 'error_message'.
+        # 
+        # If $edict is not specified or an empty string, $value is treated as
+        # the rejection value. It should then have the extended
+        # error dictionary structure as above. Otherwise, $edict is assumed
+        # to be formatted as a Tcl error dictionary and $value is
+        # added to it with the key 'error_message'. This modified
+        # dictionary is then used as the rejection value. If $edict is
+        # not recognized as a Tcl error dictionary, it is ignored.
         #
         # Returns '0' if promise had already been settled and '1' if
         # it was rejected by the current call.
@@ -251,12 +263,16 @@ oo::class create promise::Promise {
             return 0;             # Already settled
         }
 
+        if {![catch {dict get $edict -code} result]} {
+            set value [dict set edict error_message $value]
+        }
+
         #ruff
         # Otherwise, it is transitioned to the 'REJECTED' state with
         # the value specified by $errval. If there are any reject
         # reactions registered by the [done] or [then] methods, they
         # are scheduled to be run.
-        set _value $errval
+        set _value $value
         set _state REJECTED
         my ScheduleReactions
         return 1
@@ -676,7 +692,7 @@ proc promise::_all_helper {all_promise remaining_promises values resolution valu
             [list [namespace current]::_all_helper $all_promise $remaining_promises $values FULFILLED] \
             [list [namespace current]::_all_helper $all_promise $remaining_promises $values REJECTED]
     } msg edict]} {
-        $all_promise reject [promise::edict_rejection $edict $msg]
+        $all_promise reject $msg $edict
     }
     return
 }
@@ -710,17 +726,6 @@ proc promise::race* {args} {
     # multiple arguments, each of which is a Promise object. See [race]
     # for a description.
     return [race $args]
-}
-
-proc promise::edict_rejection {edict message} {
-    # Return a value to be used to reject a promise
-    #  edict - a Tcl error dictionary
-    #  message - an error message
-    # By convention, promises are rejected with a value that is
-    # in the format of a Tcl error dictionary with one additional
-    # key, 'error_message' which contains the error message.
-    # This command is used to construct such a value.
-    return [dict set edict error_message $message]
 }
 
 proc promise::rejection {errorcode message} {
@@ -877,7 +882,7 @@ proc promise::_read_channel {prom chan data} {
         close $chan
     } result edict]
     if {$code} {
-        safe_reject $prom [edict_rejection $edict $result]
+        safe_reject $prom $result $edict
     } else {
         safe_fulfill $prom $data
     }
@@ -902,7 +907,7 @@ proc promise::pexec {args} {
 
 proc promise::safe_fulfill {prom value} {
     # Fulfills the specified promise
-    #  prom - the promise to be fulfilled
+    #  prom - the [Promise] object to be fulfilled
     #  value - the fulfillment value
     # This is a convenience command that checks if $prom still exists
     # and if so fulfills it with $value.
@@ -916,12 +921,13 @@ proc promise::safe_fulfill {prom value} {
     return [$prom fulfill $value]
 }
 
-proc promise::safe_reject {prom errval} {
+proc promise::safe_reject {prom value {edict {}}} {
     # Rejects the specified promise
-    #  prom - the promise to be fulfilled
-    #  errval - the value to use for rejecting
+    #  prom - the [Promise] object to be fulfilled
+    #  value - see [Promise.reject]
+    #  edict - see [Promise.reject]
     # This is a convenience command that checks if $prom still exists
-    # and if so rejects it with $errval.
+    # and if so rejects it with the specified arguments.
     #
     # Returns 0 if the promise does not exist any more, else the return
     # value from its [reject] method.
@@ -929,7 +935,7 @@ proc promise::safe_reject {prom errval} {
         # The object has been deleted. Naught to do
         return
     }
-    $prom reject $errval
+    $prom reject $value $edict
 }
 
 proc promise::ptask {script} {
@@ -957,7 +963,7 @@ proc promise::ptask {script} {
         return [Promise new [lambda {script prom} {
             set thread_script [string map [list %PROM% $prom %TID% [thread::id] %SCRIPT% $script] {
                 if {[catch {%SCRIPT%} result edict]} {
-                    set response [list ::promise::safe_reject %PROM% [dict set edict error_message $result]]
+                    set response [list ::promise::safe_reject %PROM% $result $edict]
                 } else {
                     set response [list ::promise::safe_fulfill %PROM% $result]
                 }
@@ -995,7 +1001,7 @@ proc promise::pworker {tpool script} {
     return [Promise new [lambda {tpool script prom} {
         set thread_script [string map [list %PROM% $prom %TID% [thread::id] %SCRIPT% $script] {
             if {[catch {%SCRIPT%} result edict]} {
-                set response [list ::promise::safe_reject %PROM% [dict set edict error_message $result]]
+                set response [list ::promise::safe_reject %PROM% $result $edict]
             } else {
                 set response [list ::promise::safe_fulfill %PROM% $result]
             }
