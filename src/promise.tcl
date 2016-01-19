@@ -429,7 +429,7 @@ oo::class create promise::Promise {
         set then_promise [[self class] new ""]
         my RegisterReactions \
             FULFILLED [list ::promise::_then_reaction $then_promise FULFILLED $on_fulfill] \
-            REJECTED [list ::promise::_then_reaction $then_promise REJECTED $on_fulfill]
+            REJECTED [list ::promise::_then_reaction $then_promise REJECTED $on_reject]
         return $then_promise
     }
 
@@ -508,7 +508,7 @@ proc promise::_then_reaction {target_promise status cmd value} {
         # the then_* commands retrieve target_promise from level 1 (here).
         # So directly invoke.
         if {[catch [linsert $cmd end $value] value edict]} {
-            $target_promise reject [list $value $edict]
+            $target_promise reject $value $edict
         } else {
             $target_promise fulfill $value
         }
