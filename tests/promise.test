@@ -507,8 +507,154 @@ namespace eval promise::test {
         result
     } -result {alreadyset 0}
 
+    test safe_fulfill-0 {safe_fulfill} -body {
+        promise::safe_fulfill dummy value
+    } -result 0
+        
+    test safe_fulfill-1 {safe_fulfill} -setup {
+        set p1 [promise::pfulfilled p1]
+    } -body {
+        list [promise::safe_fulfill $p1 safe] [$p1 value]
+    } -cleanup {
+        $p1 done
+    } -result {0 p1}
+        
+    test safe_fulfill-2 {safe_fulfill} -body {
+        set p1 [promise::ptimer 100]
+        $p1 done [handler]
+        after 50 [promise::lambda {prom} {
+            set ::fulfilled [promise::safe_fulfill $prom alreadyset]
+        } $p1]
+        wait
+        list $::fulfilled {*}[result]
+    } -result {1 alreadyset 0}
+        
+    test safe_reject-0 {safe_reject} -body {
+        promise::safe_reject dummy value
+    } -result "" 
+
+    test safe_reject-1 {safe_reject} -setup {
+        set p1 [promise::prejected p1]
+    } -body {
+        list [promise::safe_reject $p1 safe] [$p1 value]
+    } -cleanup {
+        $p1 done "" lindex
+    } -result {0 p1}
+        
+    test safe_reject-2 {safe_reject} -body {
+        set p1 [promise::ptimer 100]
+        $p1 done [handler] [handler]
+        after 50 [promise::lambda {prom} {
+            set ::rejected [promise::safe_reject $prom alreadyset]
+        } $p1]
+        wait
+        list $::rejected {*}[result]
+    } -result {1 alreadyset 0}
+
+    test then_chain-0 {then_chain fulfill} -body {
+        set p1 [promise::ptimer 50]
+        set p2 [$p1 then [promise::lambda val {
+            promise::then_chain [promise::ptimer 50 chained]
+        }]]
+        $p2 done [handler]
+        wait
+        result
+    } -result {chained 0}
+                
+    test then_chain-1 {then_chain reject} -body {
+        set p1 [promise::ptimer 50]
+        set p2 [$p1 then [promise::lambda val {
+            promise::then_chain [promise::ptimeout 50 chained]
+        }]]
+        $p2 done [handler] [handler]
+        wait
+        errorcode
+    } -result {chained {PROMISE TIMER EXPIRED} 0}
+    
+    test then_fulfill-0 {then_fulfill} -body {
+        set p1 [promise::ptimer 50]
+        set p2 [$p1 then [promise::lambda val {
+            promise::then_fulfill chained
+        }]]
+        $p2 done [handler]
+        wait
+        result
+    } -result {chained 0}
+
+    test then_reject-0 {then_reject} -body {
+        set p1 [promise::ptimeout 50]
+        set p2 [$p1 then "" [promise::lambda val {
+            promise::then_reject [promise::rejection {PROMISE TEST CHAIN} chained]
+        }]]
+        $p2 done [handler] [handler]
+        wait
+        errorcode
+    } -result {chained {PROMISE TEST CHAIN} 0}
+    
+    test then_reject-0 {then_rejecti in catch} -body {
+        set p1 [promise::ptimeout 50]
+        set p2 [$p1 catch [promise::lambda val {
+            promise::then_reject [promise::rejection {PROMISE TEST CHAIN} chained]
+        }]]
+        $p2 done [handler] [handler]
+        wait
+        errorcode
+    } -result {chained {PROMISE TEST CHAIN} 0}
+
+    test state-0 {state PENDING} -setup {
+        set p1 [promise::ptimer 50]
+    } -cleanup {
+        $p1 done [handler]
+        wait
+    } -body {
+        $p1 state
+    } -result PENDING
+    
+    test state-1 {state FULFILLED} -setup {
+        set p1 [promise::pfulfilled fulfilled]
+    } -cleanup {
+        $p1 done [handler]
+        wait
+    } -body {
+        $p1 state
+    } -result FULFILLED
+    
+    test state-2 {state REJECTED} -setup {
+        set p1 [promise::prejected rejected]
+    } -cleanup {
+        $p1 done "" [handler]
+        wait
+    } -body {
+        $p1 state
+    } -result REJECTED
+
+    test value-0 {value PENDING} -setup {
+        set p1 [promise::ptimer 50]
+    } -cleanup {
+        $p1 done [handler]
+        wait
+    } -body {
+        list [catch {$p1 value} msg] $msg
+    } -result {1 {Value is not set.}}
+    
+    test value-1 {value FULFILLED} -setup {
+        set p1 [promise::pfulfilled fulfilled]
+    } -cleanup {
+        $p1 done [handler]
+        wait
+    } -body {
+        $p1 value
+    } -result fulfilled
+    
+    test value-2 {value REJECTED} -setup {
+        set p1 [promise::prejected rejected]
+    } -cleanup {
+        $p1 done "" [handler]
+        wait
+    } -body {
+        $p1 value
+    } -result rejected
+    
 }
-
-
 
 tcltest::cleanupTests

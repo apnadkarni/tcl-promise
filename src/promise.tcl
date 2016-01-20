@@ -517,15 +517,16 @@ proc promise::_then_reaction {target_promise status cmd value} {
         }
     } else {
         # Invoke the real reaction code and fulfill/reject the target promise.
-        # Not the reaction code may have called one of the promise::then_*
-        # commands itself in which case these calls will be no-ops.
+        # Note the reaction code may have called one of the promise::then_*
+        # commands itself and reactions run resulting in the object being
+        # freed. Hence resolve using the safe* variants
         # TBD - ideally we would like to execute at global level. However
-        # the then_* commands retrieve target_promise from level 1 (here).
-        # So directly invoke.
+        # the then_* commands retrieve target_promise from level 1 (here)
+        # which they cannot if uplevel #0 is done. So directly invoke.
         if {[catch [linsert $cmd end $value] value edict]} {
-            $target_promise reject $value $edict
+            safe_reject $target_promise $value $edict
         } else {
-            $target_promise fulfill $value
+            safe_fulfill $target_promise $value
         }
     }
     return
