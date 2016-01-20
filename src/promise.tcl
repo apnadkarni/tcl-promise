@@ -161,6 +161,13 @@ oo::class create promise::Promise {
         incr _nrefs -1
         my GC
     }
+
+    method nrefs {} {
+        # Returns the current reference count
+        #
+        # Use for debugging only! Note, internal references are not included.
+        return $_nrefs
+    }
     
     method GC {} {
         if {$_nrefs <= 0 && $_do_gc && [llength $_reactions] == 0} {
@@ -655,14 +662,27 @@ proc promise::all {promises} {
 
         # See test all-4. We want to make sure promises do not go away
         # until we have finished recursively queuing done calls on them.
-        foreach promise $promises {
-            $promise ref
+        # In case of errors, we have to unref the ones we had ref'ed
+        # so keep track of them (in case some are not even Promise objects)
+        set refed_promises {}
+        try {
+            foreach promise $promises {
+                $promise ref
+                lappend refed_promises $promise
+            }
+            set promises [lassign $promises first_promise]
+            $first_promise done \
+                [list ::promise::_all_helper $prom $first_promise $promises {} FULFILLED] \
+                [list ::promise::_all_helper $prom $first_promise $promises {} REJECTED]
+        } on error {msg edict} {
+            foreach promise $refed_promises {
+                $promise unref
+                $promise done
+            }
+            return -options $edict $msg
         }
-        set promises [lassign $promises first_promise]
-        $first_promise done \
-            [list ::promise::_all_helper $prom $first_promise $promises {} FULFILLED] \
-            [list ::promise::_all_helper $prom $first_promise $promises {} REJECTED]
-    } $promises]]
+        } $promises]]
+                 
         
     return $all_promise
 }

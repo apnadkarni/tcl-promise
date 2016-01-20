@@ -179,9 +179,11 @@ namespace eval promise::test {
     
     test all-1 {all - constructor failure} -setup {
         set p1 [promise::ptimer 50 p1]
+        $p1 done [handler ::done]
     } -body {
         [promise::all [list $p1 notapromise]] done [handler] [handler]
         wait
+        vwait ::done ; #Wait to confirm p1 also goes away when fulfilled
         errorcode
     } -result {{invalid command name "notapromise"} {TCL LOOKUP COMMAND notapromise} 0}
     
@@ -225,9 +227,11 @@ namespace eval promise::test {
     
     test all*-1 {all* - constructor failure} -setup {
         set p1 [promise::ptimer 50 p1]
+        $p1 done [handler ::done]
     } -body {
         [promise::all* $p1 notapromise] done [handler] [handler]
         wait
+        vwait ::done ; #Wait to confirm p1 also goes away when fulfilled
         errorcode
     } -result {{invalid command name "notapromise"} {TCL LOOKUP COMMAND notapromise} 0}
     
