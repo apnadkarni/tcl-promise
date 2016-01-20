@@ -79,6 +79,11 @@ oo::class create promise::Promise {
     # away before the application even gets a chance to call done/then.
     variable _do_gc
     variable _nrefs
+
+    # If no reject reactions are registered, then the Tcl bgerror
+    # handler is invoked. But don't want to do this more than once
+    # so track it
+    variable _bgerror_done
     
     constructor {cmd} {
         # Create a promise for the asynchronous operation to be initiated
@@ -93,6 +98,7 @@ oo::class create promise::Promise {
         set _state PENDING
         set _reactions [list ]
         set _do_gc 0
+        set _bgerror_done 0
         set _nrefs 0
         
         # Errors in the construction command are returned via
@@ -287,40 +293,43 @@ oo::class create promise::Promise {
         }
 
         # Note on garbage collection: garbage collection is to be enabled if
-        #   (1) at least one FULFILLED or REJECTED reaction is run,
-        #   (2) the promise is REJECTED but only FULFILLED reactions are
-        #     registered. In this case we also schedule a background error.
+        # at least one FULFILLED or REJECTED reaction is registered.
+        # Also if the promise is REJECTED but no rejection handlers are run
+        # we also schedule a background error.
         # In all cases, CLEANUP reactions do not count.
-        set have_fulfill_reaction 0
-        set have_reject_reaction 0
         foreach reaction $_reactions {
-            if {[llength [dict get $reaction FULFILLED]]} {
-                set have_fulfill_reaction 1
+            foreach type {FULFILLED REJECTED} {
+                if {[dict exists $reaction $type]} {
+                    set _do_gc 1
+                    if {$type eq $_state} {
+                        set cmd [dict get $reaction $type]
+                        if {[llength $cmd]} {
+                            set ran_reaction($type) 1
+                            # Enqueue the reaction via the event loop
+                            after 0 [list after idle [linsert $cmd end $_value]]
+                        }
+                    }
+                }
             }
-            if {[llength [dict get $reaction REJECTED]]} {
-                set have_reject_reaction 1
-            }
-            set cmd [dict get $reaction $_state]
-            if {[llength $cmd]} {
-                # Enqueue the reaction via the event loop passing $_value
-                after 0 [list after idle [linsert $cmd end $_value]]
-                set _do_gc 1
-            }
-            set cmd [dict get $reaction CLEANUP]
-            if {[llength $cmd]} {
-                # Enqueue the cleaner via the event loop passing the
-                # *state* as well as the value
-                after 0 [list after idle [linsert $cmd end $_state $_value]]
-                # Note we do not set _do_gc if we only run cleaners
+            if {[dict exists $reaction CLEANUP]} {
+                set cmd [dict get $reaction CLEANUP]
+                if {[llength $cmd]} {
+                    # Enqueue the cleaner via the event loop passing the
+                    # *state* as well as the value
+                    after 0 [list after idle [linsert $cmd end $_state $_value]]
+                    # Note we do not set _do_gc if we only run cleaners
+                }
             }
         }
         set _reactions [list ]
 
-        # See (2) above
-        if {$_state eq "REJECTED" && $have_fulfill_reaction && ! $have_reject_reaction} {
+        # Check for need to background error (see comments above)
+        if {$_state eq "REJECTED" && $_do_gc && ! [info exists ran_reaction(REJECTED)] && ! $_bgerror_done} {
             # Wrap in catch in case $_value does not follow error conventions
             # TBD - actually should we also check _nrefs before backgrounding
             # error?
+            # TBD - is it possible we run bgerror more than once if the
+            # gc is not actually done and we get called again?
             catch {
                 if {[dict exists $_value -level] && [dict exists $_value -code]} {
                     set eopts $_value
@@ -337,7 +346,7 @@ oo::class create promise::Promise {
                 set error_message $_value
             }
             after idle [interp bgerror {}] [list $error_message $eopts]
-            set _do_gc 1
+            set _bgerror_done 1
         }
         
         my GC
@@ -346,21 +355,21 @@ oo::class create promise::Promise {
 
     method RegisterReactions {args} {
         # Registers the specified reactions
-        #  args - dictionary keyed by "cleanup", "fulfill", "reject"
+        #  args - dictionary keyed by 'CLEANUP', 'FULFILLED', 'REJECTED'
         #     with values being the corresponding reaction callback
-        lappend _reactions [dict merge {CLEANUP "" FULFILLED "" REJECTED ""} $args]
+
+        lappend _reactions $args
         my ScheduleReactions
         return
     }
         
-    method done {on_fulfill {on_reject {}}} {
+    method done {{on_fulfill {}} {on_reject {}}} {
         # Registers reactions to be run when the promise is settled
         #  on_fulfill - command prefix for the reaction to run
-        #    if the promise is fulfilled. If an empty string, no fulfill
+        #    if the promise is fulfilled.
         #    reaction is registered.
         #  on_reject - command prefix for the reaction to run
-        #    if the promise is rejected. If unspecified or an empty string,
-        #    no reject reaction is registered.
+        #    if the promise is rejected.
         # Reactions are called with an additional argument which is
         # the value with which the promise was settled.
         # 
@@ -371,10 +380,15 @@ oo::class create promise::Promise {
         # directly, but are invoked by scheduling through the event loop.
         #
         # The method triggers garbage collection of the object if the
-        # promise has been settled and registered reactions have been
+        # promise has been settled and any registered reactions have been
         # scheduled. Applications can hold on to the object through
         # appropriate use of the [ref] and [unref] methods.
         #
+        # Note that both $on_fulfill and $on_reject may be specified
+        # as empty strings if no further action needs to be taken on
+        # settlement of the promise. If the promise is rejected, and
+        # no rejection reactions are registered, the error is reported
+        # via the Tcl 'interp bgerror' facility.
 
         # TBD - as per the Promise/A+ spec, errors in done should generate
         # a background error (unlike then).

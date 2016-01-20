@@ -416,7 +416,13 @@ namespace eval promise::test {
         wait
         errorcode
     } -result {p1 {PROMISE TIMER EXPIRED} 0}
-    
+
+    test catch-0 {catch} -body {
+        [[promise::prejected [promise::rejection {PROMISE REJECTED} p1]] catch [handler]] done
+        wait
+        errorcode
+    } -result {p1 {PROMISE REJECTED} 0}
+
 }
 
 
