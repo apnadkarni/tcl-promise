@@ -201,6 +201,22 @@ namespace eval promise::test {
         result
     } -result {{} 0}
 
+    test all-4 {all - garbage collection} -body {
+        # The test starts two timers and wait on both. We want to ensure
+        # when the short timer runs out, it is not garbage collected before
+        # the all command issues a done on it. Notice the short timer
+        # is listed second in the all command so in the implementation
+        # at the time of writing, the all command will not issue a done
+        # on it until the longer timer expires.
+        set p1 [promise::ptimer 50 p1]
+        set p2 [promise::ptimer 200 p2]
+        $p1 done lindex lindex
+        set pall [promise::all [list $p2 $p1]]
+        $pall done [handler] [handler]
+        wait
+        result
+    } -result {{p2 p1} 0}
+    
     test all*-0 {all*} -body {
         [promise::all* [promise::ptimer 100 p2] [promise::ptimer 50 p1] [promise::ptimer 300 p3]] done [handler] [handler]
         wait

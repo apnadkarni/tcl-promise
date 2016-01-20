@@ -653,10 +653,15 @@ proc promise::all {promises} {
             return
         }
 
+        # See test all-4. We want to make sure promises do not go away
+        # until we have finished recursively queuing done calls on them.
+        foreach promise $promises {
+            $promise ref
+        }
         set promises [lassign $promises first_promise]
         $first_promise done \
-            [list ::promise::_all_helper $prom $promises {} FULFILLED] \
-            [list ::promise::_all_helper $prom $promises {} REJECTED]
+            [list ::promise::_all_helper $prom $first_promise $promises {} FULFILLED] \
+            [list ::promise::_all_helper $prom $first_promise $promises {} REJECTED]
     } $promises]]
         
     return $all_promise
@@ -674,13 +679,16 @@ proc promise::all* args {
 
 # Callback for promise::all.
 #  all_promise - the "master" promise returned by the all call.
+#  done_promise - the promise whose callback is being serviced. Need to unref it
 #  remaining_promises - the list of remaining promises still to be resolved.
 #  values - values collected so far from fulfilled promises
 #  resolution - whether the current promise was resolved with "FULFILLED"
 #   or "REJECTED"
 #  value - the value of the currently fulfilled promise or error description
 #   in case rejected
-proc promise::_all_helper {all_promise remaining_promises values resolution value} {
+proc promise::_all_helper {all_promise done_promise remaining_promises values resolution value} {
+    $done_promise unref
+    
     # TBD - this does not seem the best way to do this. In particular,
     # an earlier promise might stay pending though a later promise has
     # rejected causing us to wait unnecesarily
@@ -705,8 +713,8 @@ proc promise::_all_helper {all_promise remaining_promises values resolution valu
     set remaining_promises [lassign $remaining_promises next]
     if {[catch {
         $next done \
-            [list [namespace current]::_all_helper $all_promise $remaining_promises $values FULFILLED] \
-            [list [namespace current]::_all_helper $all_promise $remaining_promises $values REJECTED]
+            [list [namespace current]::_all_helper $all_promise $next $remaining_promises $values FULFILLED] \
+            [list [namespace current]::_all_helper $all_promise $next $remaining_promises $values REJECTED]
     } msg edict]} {
         $all_promise reject $msg $edict
     }
