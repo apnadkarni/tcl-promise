@@ -365,6 +365,11 @@ namespace eval promise::test {
         result
     } -result {{bgerror: p1} 0}
     
+    test done-2 {done - no handlers} -body {
+        [promise::pfulfilled 0] done
+        npromises
+    } -result 0
+    
     test then-0 {then fulfill} -setup {
         set p1 [promise::ptimer 50 p1]
     } -body {
@@ -422,6 +427,85 @@ namespace eval promise::test {
         wait
         errorcode
     } -result {p1 {PROMISE REJECTED} 0}
+
+    test ref-0 {ref - no ref means gc} -body {
+        set p1 [promise::pfulfilled 0]
+        $p1 done
+        npromises
+    } -result 0
+    
+    test ref-1 {ref - ref means gc off} -body {
+        set p1 [promise::pfulfilled 0]
+        $p1 ref
+        $p1 done
+        npromises
+    } -cleanup {
+        $p1 unref
+    } -result 1
+
+    test ref-2 {ref - ref unref} -body {
+        set p1 [promise::pfulfilled 0]
+        $p1 ref
+        $p1 unref
+        # No handlers run so promise should still exist
+        npromises
+    } -cleanup {
+        $p1 done
+    } -result 1
+
+    test ref-3 {ref - ref done unref} -body {
+        set p1 [promise::pfulfilled 0]
+        $p1 ref
+        $p1 done
+        $p1 unref
+        npromises
+    } -result 0
+
+    test cleanup-0 {cleanup} -body {
+        set p1 [promise::ptimer 50]
+        $p1 done [handler]
+        [$p1 cleanup [promise::lambda {} {set ::result cleaned}]] done
+        wait
+        result
+    } -result {cleaned 0} 
+
+    test fulfill-0 {fulfill fulfill} -body {
+        set p1 [promise::ptimer 50]
+        $p1 done [handler]
+        $p1 fulfill alreadyset
+        wait
+        result
+    } -result {alreadyset 0}
+
+    test fulfill-1 {fulfill does not override reject} -body {
+        set p1 [promise::ptimer 50]
+        $p1 reject alreadyset
+        # Give time for timer to kick in
+        after 100 set ::done 1
+        vwait ::done
+        $p1 done [handler] [handler]
+        wait
+        result
+    } -result {alreadyset 0}
+
+    test reject-0 {reject reject} -body {
+        set p1 [promise::ptimeout 50]
+        $p1 done [handler] [handler]
+        $p1 reject [promise::rejection {PROMISE TEST ALREADYSET} alreadyset]
+        wait
+        errorcode
+    } -result {alreadyset {PROMISE TEST ALREADYSET} 0}
+
+    test reject-1 {reject does not override fulfill} -body {
+        set p1 [promise::ptimeout 50]
+        # Give time for timer to kick in
+        $p1 fulfill alreadyset
+        after 100 set ::done 1
+        vwait ::done
+        $p1 done [handler] [handler]
+        wait
+        result
+    } -result {alreadyset 0}
 
 }
 

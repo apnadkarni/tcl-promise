@@ -328,8 +328,6 @@ oo::class create promise::Promise {
             # Wrap in catch in case $_value does not follow error conventions
             # TBD - actually should we also check _nrefs before backgrounding
             # error?
-            # TBD - is it possible we run bgerror more than once if the
-            # gc is not actually done and we get called again?
             catch {
                 if {[dict exists $_value -level] && [dict exists $_value -code]} {
                     set eopts $_value
@@ -342,9 +340,12 @@ oo::class create promise::Promise {
                 }
             }
             if {![info exists eopts]} {
-                set eopts {-level 1 -code 1}
-                set error_message $_value
+                catch {throw {PROMISE REJECT} $_value} error_message eopts
             }
+            # TBD - how exactly is level to be handled?
+            # If -level is not 0, bgerror barfs because it treates
+            # it as TCL_RETURN no matter was -code is
+            dict set eopts -level 0
             after idle [interp bgerror {}] [list $error_message $eopts]
             set _bgerror_done 1
         }
@@ -827,7 +828,7 @@ proc promise::ptimer {millisecs {value "Timer expired."}} {
             # We don't want to accept "idle", "cancel" etc. for after
             throw {PROMISE TIMER INVALID} "Invalid timeout value \"$millisecs\"."
         }
-        after $millisecs [list $prom fulfill $value]
+        after $millisecs [list promise::safe_fulfill $prom $value]
     } $millisecs $value]]
 }
 
