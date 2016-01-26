@@ -14,8 +14,8 @@ proc promise::document {path args} {
         This package implements the 'promise' abstraction for
         asynchronous programming. This document is the reference for
         commands and classes implemented by the package. For a
-        tutorial introduction to promises, usage guide and examples, see
-        http://www.magicsplat.com/blog/promises.
+        tutorial introduction to promises, see the blog posts at
+        http://www.magicsplat.com/blog/tags/promises/.
     } {Download and install} {
         The package is distributed as a single Tcl module and
         can be downloaded from
