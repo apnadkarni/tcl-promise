@@ -10,7 +10,14 @@ namespace eval promise::test {
         return [llength [info class instances ::promise::Promise]]
     }
     proc handler {{var ::result}} {
-        return [promise::lambda value "set $var \$value"]
+        return [promise::lambda {var value {edict {}}} {
+            if {$edict ne ""} {
+                set $var $edict
+                dict set $var error_message $value
+            } else {
+                set $var $value
+            }
+        } $var]
     }
     proc wait {{var ::result}} {
         vwait $var
@@ -28,10 +35,13 @@ namespace eval promise::test {
     proc bgerror {msg edict} {
         set ::result "bgerror: $msg"
     }
+    proc arg0 {arg args} {
+        return $arg
+    }
     
     test version-0 {Test the version} -body {
         ::promise::version
-    } -result 1.0a0
+    } -result 1.0a1
 
     test pfulfilled-0 {pfulfilled} -body {
         [promise::pfulfilled "Fulfill value"] done [handler]
@@ -40,10 +50,10 @@ namespace eval promise::test {
     } -result {{Fulfill value} 0}
     
     test prejected-0 {prejected} -body {
-        [promise::prejected [promise::rejection {PROMISE TEST REJECTED} "Error message"]] done [handler] [handler]
+        [promise::prejected "Error message"] done [handler] [handler]
         wait
         errorcode
-    } -result {{Error message} {PROMISE TEST REJECTED} 0}
+    } -result {{Error message} {PROMISE REJECTED} 0}
 
     test ptimer-0 {ptimer} -body {
         [promise::ptimer 50] done [handler]
@@ -165,7 +175,7 @@ namespace eval promise::test {
         [promise::pconnect 127.0.0.1 1234] done [handler] [handler]
         wait
         errorcode
-    } -result [list {connection refused} {PROMISE PCONNECT} 0]
+    } -result [list {connection refused} {PROMISE PCONNECT FAIL} 0]
 
     test all-0 {all} -setup {
         set p1 [promise::ptimer 50 p1]
@@ -303,7 +313,7 @@ namespace eval promise::test {
         [promise::race [list ]] done [handler] [handler]
         wait
         errorcode
-    } -result {{Promise set is empty} {PROMISE RACE EMPTYSET} 0}
+    } -result {{No promises specified.} {PROMISE RACE EMPTYSET} 0}
         
     test race*-0 {race*} -setup {
         set p1 [promise::ptimer 50 p1]
@@ -357,7 +367,7 @@ namespace eval promise::test {
         [promise::race*] done [handler] [handler]
         wait
         errorcode
-    } -result {{Promise set is empty} {PROMISE RACE EMPTYSET} 0}
+    } -result {{No promises specified.} {PROMISE RACE EMPTYSET} 0}
         
     # Note basic done operation is already tested by above tests
     test done-0 {done - background error} -setup {
@@ -401,12 +411,12 @@ namespace eval promise::test {
     test then-1 {then reject} -setup {
         set p1 [promise::ptimeout 50 p1]
     } -body {
-        [$p1 then "" lindex] done [handler]
+        [$p1 then "" [promise::lambda {reason edict} {
+            list $reason [dict get $edict -errorcode]
+        }]] done [handler]
         wait
-        # The second stage hander is a fulfillment handler but the
-        # value is in rejection format so we use [errorcode] to get result
-        errorcode
-    } -result {p1 {PROMISE TIMER EXPIRED} 0}
+        result
+    } -result {{p1 {PROMISE TIMER EXPIRED}} 0}
 
     test then-2 {then fulfill fulfill} -setup {
         set p1 [promise::ptimer 50 p1]
@@ -419,31 +429,37 @@ namespace eval promise::test {
     test then-3 {then fulfill reject} -setup {
         set p1 [promise::ptimer 50 p1]
     } -body {
-        [[$p1 then error] then "" lindex] done [handler]
+        [[$p1 then error] then "" [promise::lambda {reason edict} {
+            list $reason [dict get $edict -errorcode]
+        }]] done [handler]
         wait
-        errorcode
-    } -result {p1 NONE 0}
+        result
+    } -result {{p1 NONE} 0}
     
     test then-3.1 {then fulfill reject} -setup {
         set p1 [promise::ptimer 50 p1]
     } -body {
         set p2 [$p1 then error]
-        set p3 [$p2 then "" lindex]
+        set p3 [$p2 then "" [promise::lambda {reason edict} {
+            list $reason [dict get $edict -errorcode]
+        }]]
         $p3 done [handler]
         wait
-        errorcode
-    } -result {p1 NONE 0}
+        result
+    } -result {{p1 NONE} 0}
     
     test then-4 {then reject fulfill} -setup {
         set p1 [promise::ptimeout 50 p1]
     } -body {
-        [[$p1 then "" lindex] then lindex] done [handler]
+        [[$p1 then "" [promise::lambda {reason edict} {
+            list $reason [dict get $edict -errorcode]
+        }]] then lindex] done [handler]
         wait
-        errorcode
-    } -result {p1 {PROMISE TIMER EXPIRED} 0}
+        result
+    } -result {{p1 {PROMISE TIMER EXPIRED}} 0}
 
     test catch-0 {catch} -body {
-        [[promise::prejected [promise::rejection {PROMISE REJECTED} p1]] catch [handler]] done
+        [[promise::prejected p1] catch [handler]] done
         wait
         errorcode
     } -result {p1 {PROMISE REJECTED} 0}
@@ -505,18 +521,27 @@ namespace eval promise::test {
         vwait ::done
         $p1 done [handler] [handler]
         wait
-        result
+        errorresult
     } -result {alreadyset 0}
 
     test reject-0 {reject reject} -body {
         set p1 [promise::ptimeout 50]
         $p1 done [handler] [handler]
-        $p1 reject [promise::rejection {PROMISE TEST ALREADYSET} alreadyset]
+        $p1 reject alreadyset
         wait
         errorcode
-    } -result {alreadyset {PROMISE TEST ALREADYSET} 0}
+    } -result {alreadyset {PROMISE REJECTED} 0}
 
-    test reject-1 {reject does not override fulfill} -body {
+    test reject-1 {reject reject} -body {
+        catch {throw {PROMISE REJECT TEST} "Reject after done"} msg edict
+        set p1 [promise::ptimeout 50]
+        $p1 done [handler] [handler]
+        $p1 reject $msg $edict
+        wait
+        errorcode
+    } -result {{Reject after done} {PROMISE REJECT TEST} 0}
+
+    test reject-2 {reject does not override fulfill} -body {
         set p1 [promise::ptimeout 50]
         # Give time for timer to kick in
         $p1 fulfill alreadyset
@@ -558,7 +583,7 @@ namespace eval promise::test {
     } -body {
         list [promise::safe_reject $p1 safe] [$p1 value]
     } -cleanup {
-        $p1 done "" lindex
+        $p1 done "" [namespace current]::arg0
     } -result {0 p1}
         
     test safe_reject-2 {safe_reject} -body {
@@ -568,7 +593,7 @@ namespace eval promise::test {
             set ::rejected [promise::safe_reject $prom alreadyset]
         } $p1]
         wait
-        list $::rejected {*}[result]
+        list $::rejected {*}[errorresult]
     } -result {1 alreadyset 0}
 
     test then_chain-0 {then_chain fulfill} -body {
@@ -603,23 +628,23 @@ namespace eval promise::test {
 
     test then_reject-0 {then_reject} -body {
         set p1 [promise::ptimeout 50]
-        set p2 [$p1 then "" [promise::lambda val {
-            promise::then_reject [promise::rejection {PROMISE TEST CHAIN} chained]
+        set p2 [$p1 then "" [promise::lambda {val edict} {
+            promise::then_reject chained $edict
         }]]
         $p2 done [handler] [handler]
         wait
         errorcode
-    } -result {chained {PROMISE TEST CHAIN} 0}
+    } -result {chained {PROMISE TIMER EXPIRED} 0}
     
-    test then_reject-0 {then_rejecti in catch} -body {
+    test then_reject-1 {then_reject in catch} -body {
         set p1 [promise::ptimeout 50]
-        set p2 [$p1 catch [promise::lambda val {
-            promise::then_reject [promise::rejection {PROMISE TEST CHAIN} chained]
+        set p2 [$p1 catch [promise::lambda {val edict} {
+            promise::then_reject chained $edict
         }]]
         $p2 done [handler] [handler]
         wait
         errorcode
-    } -result {chained {PROMISE TEST CHAIN} 0}
+    } -result {chained {PROMISE TIMER EXPIRED} 0}
 
     test state-0 {state PENDING} -setup {
         set p1 [promise::ptimer 50]
