@@ -25,7 +25,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace eval promise {
-    proc version {} { return 1.0a1 }
+    proc version {} { return 1.0a2 }
 }
 
 proc promise::lambda {params body args} {
@@ -1012,10 +1012,12 @@ proc promise::ptask {script} {
     proc [namespace current]::ptask script { 
         return [Promise new [lambda {script prom} {
             set thread_script [string map [list %PROM% $prom %TID% [thread::id] %SCRIPT% $script] {
-                if {[catch {%SCRIPT%} result edict]} {
-                    set response [list ::promise::safe_reject %PROM% $result $edict]
-                } else {
+                set retcode [catch {%SCRIPT%} result edict]
+                if {$retcode == 0 || $retcode == 2} {
+                    # ok or return
                     set response [list ::promise::safe_fulfill %PROM% $result]
+                } else {
+                    set response [list ::promise::safe_reject %PROM% $result $edict]
                 }
                 thread::send -async %TID% $response
             }]
@@ -1051,10 +1053,11 @@ proc promise::pworker {tpool script} {
     # us, Thread must already be loaded
     return [Promise new [lambda {tpool script prom} {
         set thread_script [string map [list %PROM% $prom %TID% [thread::id] %SCRIPT% $script] {
-            if {[catch {%SCRIPT%} result edict]} {
-                set response [list ::promise::safe_reject %PROM% $result $edict]
-            } else {
+            set retcode [catch {%SCRIPT%} result edict]
+            if {$retcode == 0 || $retcode == 2} {
                 set response [list ::promise::safe_fulfill %PROM% $result]
+            } else {
+                set response [list ::promise::safe_reject %PROM% $result $edict]
             }
             thread::send -async %TID% $response
         }]

@@ -41,7 +41,7 @@ namespace eval promise::test {
     
     test version-0 {Test the version} -body {
         ::promise::version
-    } -result 1.0a1
+    } -result 1.0a2
 
     test pfulfilled-0 {pfulfilled} -body {
         [promise::pfulfilled "Fulfill value"] done [handler]
@@ -127,6 +127,12 @@ namespace eval promise::test {
         errorcode
     } -result {{Error in task} {PROMISE TEST} 0}
 
+    test ptask-0 {ptask - return} -body {
+        [promise::ptask {return "a string"}] done [handler] [handler]
+        wait
+        result
+    } -result {{a string} 0}
+
     test pworker-0 {pworker} -setup {
         package require Thread
         set tpool [tpool::create]
@@ -159,6 +165,18 @@ namespace eval promise::test {
         errorcode
     } -result {{Error in task} {PROMISE TEST} 0}
 
+    test pworker-3 {pworker - return} -setup {
+        package require Thread
+        set tpool [tpool::create]
+        tpool::preserve $tpool
+    } -cleanup {
+        tpool::release $tpool
+    } -body {
+        [promise::pworker $tpool {return {a string}}] done [handler] [handler]
+        wait
+        result
+    } -result {{a string} 0}
+    
     test pconnect-0 {pconnect} -body {
         [promise::pconnect www.yahoo.com 80] done [handler] [handler]
         wait
