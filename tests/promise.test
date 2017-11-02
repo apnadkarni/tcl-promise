@@ -41,7 +41,7 @@ namespace eval promise::test {
     
     test version-0 {Test the version} -body {
         ::promise::version
-    } -result 1.0a2
+    } -result 1.0.3
 
     test pfulfilled-0 {pfulfilled} -body {
         [promise::pfulfilled "Fulfill value"] done [handler]
@@ -717,7 +717,83 @@ namespace eval promise::test {
     } -body {
         $p1 value
     } -result rejected
+
+    test async-0 {Basic async fulfilled - no arguments} -body {
+        promise::async asyncproc {} {
+            return 42
+        }
+        set p [asyncproc]
+        $p done [handler]
+        wait
+        result
+    } -result {42 0}
+
+    test async-1 {Basic async rejected} -body {
+        promise::async asyncproc {} {
+            throw {PROMISE TEST async-1} "An error occured"
+        }
+        set p [asyncproc]
+        $p done "" [handler]
+        wait
+        list [errorresult] [errorcode]
+    } -result {{{An error occured} 0} {{An error occured} {PROMISE TEST async-1} 0}}
+
+    test async-2 {Basic async fulfilled - with arguments} -body {
+        promise::async asyncproc {a b} {
+            return "$a $b"
+        }
+        set p [asyncproc "This is" "a test"]
+        $p done [handler]
+        wait
+        result
+    } -result {{This is a test} 0}
     
+    test async-3 {Basic async fulfilled - args} -body {
+        promise::async asyncproc {args} {
+            return [join $args " "]
+        }
+        set p [asyncproc This is a test]
+        $p done [handler]
+        wait
+        result
+    } -result {{This is a test} 0}
+    
+    test async-4 {Basic async - wrong # arguments} -body {
+        promise::async asyncproc {a b} {
+            return "$a $b"
+        }
+        set p [asyncproc "This is"]
+    } -result {wrong # args: should be "asyncproc a b"} -returnCodes error
+
+    test async-5 {async - nested} -body {
+        promise::async asyncproc {val args} {
+            if {[llength $args] == 0} {
+                return $val
+            }
+            set p [asyncproc {*}$args]
+            return "$val [promise::await $p]"
+        }
+        set p [asyncproc This is a test]
+        $p done [handler]
+        wait
+        result
+    } -result {{This is a test} 0}
+    
+    test async-6 {async - nested fail} -body {
+        promise::async asyncproc {val args} {
+            if {[llength $args] == 0} {
+                throw {PROMISE TEST async-6} "Simulate failure"
+            }
+            set p [asyncproc {*}$args]
+            return "$val [promise::await $p]"
+        }
+        set p [asyncproc This is a test]
+        $p done "" [handler]
+        wait
+        list [errorresult] [errorcode]
+    } -result {{{Simulate failure} 0} {{Simulate failure} {PROMISE TEST async-6} 0}}
+
+    #TODO - nesting
 }
 
 tcltest::cleanupTests
