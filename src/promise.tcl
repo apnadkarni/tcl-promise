@@ -25,11 +25,11 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace eval promise {
-    proc version {} { return 1.0a2 }
+    proc version {} { return 1.0.3 }
 }
 
 proc promise::lambda {params body args} {
-    # Creates an anonymous procedure and returns a command prefix for it
+    # Creates an anonymous procedure and returns a command prefix for it.
     #   params - parameter definitions for the procedure
     #   body - body of the procedures
     #   args - additional arguments to be passed to the procedure when it
@@ -131,7 +131,7 @@ oo::class create promise::Promise {
     }
     
     method state {} {
-        # Returns the current state of the promise
+        # Returns the current state of the promise.
         #
         # The promise state may be one of the values 'PENDING',
         # 'FULFILLED', 'REJECTED' or 'CHAINED'
@@ -139,7 +139,7 @@ oo::class create promise::Promise {
     }
     
     method value {} {
-        # Returns the settled value for the promise
+        # Returns the settled value for the promise.
         #
         # The returned value may be the fulfilled value or the rejected
         # value depending on whether the associated operation was successfully
@@ -153,12 +153,12 @@ oo::class create promise::Promise {
     }
 
     method ref {} {
-        # Increments the reference count for the object
+        # Increments the reference count for the object.
         incr _nrefs
     }
 
     method unref {} {
-        # Decrements the reference count for the object
+        # Decrements the reference count for the object.
         #
         # The object may have been destroyed when the call returns.
         incr _nrefs -1
@@ -166,7 +166,7 @@ oo::class create promise::Promise {
     }
 
     method nrefs {} {
-        # Returns the current reference count
+        # Returns the current reference count.
         #
         # Use for debugging only! Note, internal references are not included.
         return $_nrefs
@@ -201,7 +201,7 @@ oo::class create promise::Promise {
     
     # Method to invoke to fulfil a promise with a value or another promise.
     method fulfill {value} {
-        # Fulfills the promise
+        # Fulfills the promise.
         #   value - the value with which the promise is fulfilled
         #
         # Returns '0' if promise had already been settled and '1' if
@@ -226,7 +226,7 @@ oo::class create promise::Promise {
 
     # Method to invoke to fulfil a promise with a value or another promise.
     method chain {promise} {
-        # Chains the promise to another promise
+        # Chains the promise to another promise.
         #   promise - the [Promise] object to which this promise is to
         #     be chained
         #
@@ -254,7 +254,7 @@ oo::class create promise::Promise {
     }
 
     method reject {reason {edict {}}} {
-        # Rejects the promise
+        # Rejects the promise.
         #   reason - a message string describing the reason for the rejection.
         #   edict - a Tcl error dictionary
         #
@@ -366,7 +366,7 @@ oo::class create promise::Promise {
     } 
 
     method RegisterReactions {args} {
-        # Registers the specified reactions
+        # Registers the specified reactions.
         #  args - dictionary keyed by 'CLEANUP', 'FULFILLED', 'REJECTED'
         #     with values being the corresponding reaction callback
 
@@ -376,7 +376,7 @@ oo::class create promise::Promise {
     }
         
     method done {{on_fulfill {}} {on_reject {}}} {
-        # Registers reactions to be run when the promise is settled
+        # Registers reactions to be run when the promise is settled.
         #  on_fulfill - command prefix for the reaction to run
         #    if the promise is fulfilled.
         #    reaction is registered.
@@ -461,7 +461,7 @@ oo::class create promise::Promise {
 
     # This could be a forward, but then we cannot document it via ruff!
     method catch {on_reject} {
-        # Registers reactions to be run when the promise is rejected
+        # Registers reactions to be run when the promise is rejected.
         #   on_reject - command prefix for the reaction
         #     reaction to run if the promise is rejected. If unspecified
         #     or an empty string, no reject reaction is registered. The
@@ -475,7 +475,7 @@ oo::class create promise::Promise {
     
     method cleanup {cleaner} {
         # Registers a reaction to be executed for running cleanup
-        # code when the promise is settled
+        # code when the promise is settled.
         #   cleaner - command prefix to run on settlement
         # This method is intended to run a clean up script 
         # when a promise is settled. It may also be called multiple times
@@ -582,7 +582,7 @@ proc promise::_cleanup_reaction {target_promise cleaner state value {edict {}}} 
 
 proc promise::then_fulfill {value} {
     # Fulfills the promise returned by a [then] method call from
-    # within its reaction
+    # within its reaction.
     #  value - the value with which to fulfill the promise
     #
     # The [Promise.then] method is a mechanism to chain asynchronous
@@ -608,7 +608,7 @@ proc promise::then_fulfill {value} {
 
 proc promise::then_chain {promise} {
     # Chains the promise returned by a [then] method call to
-    # another promise
+    # another promise.
     #  promise - the promise to which the promise returned by [then] is
     #     to be chained
     #
@@ -633,10 +633,9 @@ proc promise::then_chain {promise} {
 
 proc promise::then_reject {reason edict} {
     # Rejects the promise returned by a [then] method call from
-    # within its reaction
+    # within its reaction.
     #   reason - a message string describing the reason for the rejection.
     #   edict - a Tcl error dictionary
-    #
     # The [Promise.then] method is a mechanism to chain asynchronous
     # reactions by registering them on a promise. It returns a new
     # promise which is settled by the return value from the reaction,
@@ -657,9 +656,8 @@ proc promise::then_reject {reason edict} {
 
 proc promise::all {promises} {
     # Returns a promise that fulfills or rejects when all promises
-    # in the $promises argument have fulfilled or any one has rejected
-    # promises - a list of Promise objects
-    #
+    # in the $promises argument have fulfilled or any one has rejected.
+    #   promises - a list of Promise objects
     # If any of $promises rejects, then the promise returned by the
     # command will reject with the same value. Otherwise, the promise
     # will fulfill when all promises have fulfilled.
@@ -701,7 +699,7 @@ proc promise::all {promises} {
 
 proc promise::all* args {
     # Returns a promise that fulfills or rejects when all promises
-    # in the $args argument have fulfilled or any one has rejected
+    # in the $args argument have fulfilled or any one has rejected.
     # args - list of Promise objects
     # This command is identical to the all command except that it takes
     # multiple arguments, each of which is a Promise object. See [all]
@@ -755,7 +753,7 @@ proc promise::_all_helper {all_promise done_promise remaining_promises values re
 
 proc promise::race {promises} {
     # Returns a promise that fulfills or rejects when any promise
-    # in the $promises argument is fulfilled or rejected
+    # in the $promises argument is fulfilled or rejected.
     #   promises - a list of Promise objects
     # The returned promise will fulfill and reject with the same value
     # as the first promise in $promises that fulfills or rejects.
@@ -777,20 +775,27 @@ proc promise::race {promises} {
 
 proc promise::race* {args} {
     # Returns a promise that fulfills or rejects when any promise
-    # in the passed arguments is fulfilled or rejected
+    # in the passed arguments is fulfilled or rejected.
     #   args - list of Promise objects
-    # This command is identical to the all command except that it takes
+    # This command is identical to the 'race' command except that it takes
     # multiple arguments, each of which is a Promise object. See [race]
     # for a description.
     return [race $args]
 }
 
-proc promise::await {p} {
+proc promise::await {prom} {
+    # Waits for a promise to be settled and returns its resolved value.
+    #   prom - the promise that is to be waited on
+    # This command may only be used from within a procedure constructed
+    # with the [async] command or any code invoked from it.
+    #
+    # Returns the resolved value of $prom if it is fulfilled or raises an error
+    # if it is rejected.
     set coro [info coroutine]
     if {$coro eq ""} {
         throw {PROMISE AWAIT NOTCORO} "await called from outside a coroutine"
     }
-    $p done [list $coro success] [list $coro fail]
+    $prom done [list $coro success] [list $coro fail]
     lassign [yieldto return -level 0] status val ropts
     if {$status eq "success"} {
         return $val
@@ -799,12 +804,38 @@ proc promise::await {p} {
     }
 }
 
-proc promise::async {name params body} {
+proc promise::async {name paramdefs body} {
+    # Defines an procedure that will run a script asynchronously as a coroutine.
+    # name - name of the procedure
+    # paramdefs - the parameter definitions to the procedure in the same
+    #   form as passed to the standard 'proc' command
+    # body - the script to be executed
+    #
+    # When the defined procedure $name is called, it runs the supplied $body 
+    # within a new coroutine. The return value from the $name procedure call
+    # will be a promise that will be fulfilled when the coroutine completes
+    # normally or rejected if it completes with an error.
+    #
+    # Note that the passed $body argument is not the body of the
+    # the procedure $name. Rather it is run as an anonymous procedure in 
+    # the coroutine but in the same namespace context as $name.
+    #
+    # The primary purpose of this command is to make it easy, in
+    # conjunction with the [await] command, to wrap a sequence of asynchronous
+    # operations as a single computational unit.
+    #
+    # Returns a promise that will be settled with the result of the script.
+    if {![string equal -length 2 "$name" "::"]} {
+        set ns [uplevel 1 namespace current]
+        set name ${ns}::$name
+    } else {
+        set ns ::
+    }
     set tmpl {
         proc %NAME% args {
             set p [promise::Promise new [promise::lambda {real_args prom} {
                 coroutine ::promise::async#[info cmdcount] {*}[promise::lambda {p args} {
-                    set status [catch [list apply [list {%PARAMS%} {%BODY%}] {*}$args] res ropts]
+                    set status [catch [list apply [list {%PARAMDEFS%} {%BODY%} %NS%] {*}$args] res ropts]
                     if {$status == 0} {
                         $p fulfill $res
                     } else {
@@ -815,7 +846,10 @@ proc promise::async {name params body} {
             return $p
         }
     }
-    uplevel 1 [string map [list %NAME% $name %PARAMS% $params %BODY% $body] $tmpl]
+    eval [string map [list %NAME% $name \
+                          %PARAMDEFS% $paramdefs \
+                          %BODY% $body \
+                          %NS% $ns] $tmpl]
 }
 
 proc promise::pfulfilled {value} {
@@ -827,7 +861,7 @@ proc promise::pfulfilled {value} {
 }
 
 proc promise::prejected {value} {
-    # Returns a new promise that is already rejected
+    # Returns a new promise that is already rejected.
     #  value - the value with which to reject the promise
     # By convention, $value should be of the format returned by
     # [rejection].
@@ -837,7 +871,7 @@ proc promise::prejected {value} {
 }
 
 proc promise::pgeturl {url args} {
-    # Returns a promise that will be fulfilled when the specified URL is fetched
+    # Returns a promise that will be fulfilled when the a URL is fetched.
     #   url - the URL to fetch
     #   args - arguments to pass to the [http::geturl] command
     # This command invokes the asynchronous form of the [http::geturl] command
@@ -878,7 +912,7 @@ proc promise::pgeturl {url args} {
 
 proc promise::ptimer {millisecs {value "Timer expired."}} {
     # Returns a promise that will be fulfilled when the specified time has
-    # elapsed
+    # elapsed.
     #  millisecs - time interval in milliseconds
     #  value - the value with which the promise is to be fulfilled
     # In case of errors (e.g. if $milliseconds is not an integer), the
@@ -899,7 +933,7 @@ proc promise::ptimer {millisecs {value "Timer expired."}} {
 
 proc promise::ptimeout {millisecs {value "Operation timed out."}} {
     # Returns a promise that will be rejected when the specified time has
-    # elapsed
+    # elapsed.
     #  millisecs - time interval in milliseconds
     #  value - the value with which the promise is to be rejected
     # In case of errors (e.g. if $milliseconds is not an integer), the
@@ -923,7 +957,7 @@ proc promise::ptimeout {millisecs {value "Operation timed out."}} {
 
 proc promise::pconnect {args} {
     # Returns a promise that will be fulfilled when the a socket connection
-    # is completed
+    # is completed.
     #  args - arguments to be passed to the Tcl 'socket' command
     # This is a wrapper for the async version of the Tcl 'socket' command.
     # If the connection completes, the promise is fulfilled with the
@@ -972,7 +1006,7 @@ proc promise::_read_channel {prom chan data} {
 }
 
 proc promise::pexec {args} {
-    # Runs an external program and returns a promise for its output
+    # Runs an external program and returns a promise for its output.
     #  args - program and its arguments as passed to the Tcl 'open' call
     #    for creating pipes
     # If the program runs without errors, the promise is fulfilled by its
@@ -988,7 +1022,7 @@ proc promise::pexec {args} {
 }        
 
 proc promise::safe_fulfill {prom value} {
-    # Fulfills the specified promise
+    # Fulfills the specified promise.
     #  prom - the [Promise] object to be fulfilled
     #  value - the fulfillment value
     # This is a convenience command that checks if $prom still exists
@@ -1004,7 +1038,7 @@ proc promise::safe_fulfill {prom value} {
 }
 
 proc promise::safe_reject {prom value {edict {}}} {
-    # Rejects the specified promise
+    # Rejects the specified promise.
     #  prom - the [Promise] object to be fulfilled
     #  value - see [Promise.reject]
     #  edict - see [Promise.reject]
@@ -1022,7 +1056,7 @@ proc promise::safe_reject {prom value {edict {}}} {
 
 proc promise::ptask {script} {
     # Creates a new Tcl thread to run the specified script and returns
-    # a promise for the script results
+    # a promise for the script results.
     #   script - script to run in the thread
     # Returns a promise that will be settled by the result of the script
     #
@@ -1062,7 +1096,7 @@ proc promise::ptask {script} {
 
 proc promise::pworker {tpool script} {
     # Runs a script in a worker thread from a thread pool and
-    # returns a promise for the same
+    # returns a promise for the same.
     #   tpool - thread pool identifier
     #   script - script to run in the worker thread
     # Returns a promise that will be settled by the result of the script
