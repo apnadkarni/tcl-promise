@@ -818,7 +818,9 @@ proc promise::async {name paramdefs body} {
     #
     # Note that the passed $body argument is not the body of the
     # the procedure $name. Rather it is run as an anonymous procedure in 
-    # the coroutine but in the same namespace context as $name.
+    # the coroutine but in the same namespace context as $name. Thus the
+    # caller or the $body script must not make any assumptions about
+    # relative stack levels, use of 'uplevel' etc.
     #
     # The primary purpose of this command is to make it easy, in
     # conjunction with the [await] command, to wrap a sequence of asynchronous
@@ -832,7 +834,7 @@ proc promise::async {name paramdefs body} {
         set ns ::
     }
     set tmpl {
-        proc %NAME% args {
+        proc %NAME% {%PARAMDEFS%} {
             set p [promise::Promise new [promise::lambda {real_args prom} {
                 coroutine ::promise::async#[info cmdcount] {*}[promise::lambda {p args} {
                     set status [catch [list apply [list {%PARAMDEFS%} {%BODY%} %NS%] {*}$args] res ropts]
@@ -842,7 +844,7 @@ proc promise::async {name paramdefs body} {
                         $p reject $res $ropts
                     }
                 } $prom {*}$real_args]
-            } $args]]
+            } [lrange [info level 0] 1 end]]]
             return $p
         }
     }
@@ -1162,6 +1164,10 @@ package provide promise [promise::version]
 
 if {[info exists ::argv0] &&
     [file tail [info script]] eq [file tail $::argv0]} {
+    if {[llength $::argv] == 0} {
+        puts "Usage: [file tail [info nameofexecutable]] $::argv0 version|tm|dist"
+        exit 1
+    }
     switch -glob -- [lindex $::argv 0] {
         ver* { puts [promise::version] }
         tm -
