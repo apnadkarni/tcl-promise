@@ -504,7 +504,7 @@ proc promise::_then_reaction {target_promise status cmd value {edict {}}} {
 
     # IMPORTANT!!!!
     # MUST BE CALLED FROM EVENT LOOP AT so info level must be 1. Else
-    # promise::then_fulfill/then_reject will not work
+    # promise::then_fulfill/then_reject/then_chain will not work
     # Also, Do NOT change the param name target_promise without changing
     # those procs.
     # Oh what a hack to get around lack of closures. Alternative would have
@@ -589,7 +589,7 @@ proc promise::then_fulfill {value} {
     # reactions by registering them on a promise. It returns a new
     # promise which is settled by the return value from the reaction,
     # or by the reaction calling one of three commands - 'then_fulfill',
-    # [then_reject] or [then_promise]. Calling 'then_fulfill' fulfills
+    # [then_reject] or [then_chain]. Calling 'then_fulfill' fulfills
     # the promise returned by the 'then' method that queued the currently
     # running reaction.
     #
@@ -616,7 +616,7 @@ proc promise::then_chain {promise} {
     # reactions by registering them on a promise. It returns a new
     # promise which is settled by the return value from the reaction,
     # or by the reaction calling one of three commands - [then_fulfill],
-    # 'then_reject' or [then_promise]. Calling 'then_chain' chains
+    # 'then_reject' or [then_chain]. Calling 'then_chain' chains
     # the promise returned by the 'then' method that queued the currently
     # running reaction to $promise so that the former will be settled
     # based on the latter.
@@ -641,7 +641,7 @@ proc promise::then_reject {reason edict} {
     # reactions by registering them on a promise. It returns a new
     # promise which is settled by the return value from the reaction,
     # or by the reaction calling one of three commands - [then_fulfill],
-    # 'then_reject' or [then_promise]. Calling 'then_reject' rejects
+    # 'then_reject' or [then_chain]. Calling 'then_reject' rejects
     # the promise returned by the 'then' method that queued the currently
     # running reaction.
     #
@@ -785,6 +785,39 @@ proc promise::race* {args} {
     return [race $args]
 }
 
+proc promise::await {p} {
+    set coro [info coroutine]
+    if {$coro eq ""} {
+        throw {PROMISE AWAIT NOTCORO} "await called from outside a coroutine"
+    }
+    $p done [list $coro success] [list $coro fail]
+    lassign [yieldto return -level 0] status val ropts
+    if {$status eq "success"} {
+        return $val
+    } else {
+        return -options $ropts $val
+    }
+}
+
+proc promise::async {name params body} {
+    set tmpl {
+        proc %NAME% args {
+            set p [promise::Promise new [promise::lambda {real_args prom} {
+                coroutine ::promise::async#[info cmdcount] {*}[promise::lambda {p args} {
+                    set status [catch [list apply [list {%PARAMS%} {%BODY%}] {*}$args] res ropts]
+                    if {$status == 0} {
+                        $p fulfill $res
+                    } else {
+                        $p reject $res $ropts
+                    }
+                } $prom {*}$real_args]
+            } $args]]
+            return $p
+        }
+    }
+    uplevel 1 [string map [list %NAME% $name %PARAMS% $params %BODY% $body] $tmpl]
+}
+
 proc promise::pfulfilled {value} {
     # Returns a new promise that is already fulfilled with the specified value.
     #  value - the value with which to fulfill the created promise
@@ -796,7 +829,7 @@ proc promise::pfulfilled {value} {
 proc promise::prejected {value} {
     # Returns a new promise that is already rejected
     #  value - the value with which to reject the promise
-    # By convention, the $value should of the format returned by
+    # By convention, $value should be of the format returned by
     # [rejection].
     return [Promise new [lambda {value prom} {
         $prom reject $value
@@ -857,7 +890,7 @@ proc promise::ptimer {millisecs {value "Timer expired."}} {
     
     return [Promise new [lambda {millisecs value prom} {
         if {![string is integer $millisecs]} {
-            # We don't want to accept "idle", "cancel" etc. for after
+            # We don't allow "idle", "cancel" etc. as an argument to after
             throw {PROMISE TIMER INVALID} "Invalid timeout value \"$millisecs\"."
         }
         after $millisecs [list promise::safe_fulfill $prom $value]
