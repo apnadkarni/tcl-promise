@@ -793,7 +793,39 @@ namespace eval promise::test {
         list [errorresult] [errorcode]
     } -result {{{Simulate failure} 0} {{Simulate failure} {PROMISE TEST async-6} 0}}
 
-    #TODO - nesting
+    test async-7 {async await fulfilled} -body {
+        promise::async asyncproc {a b} {
+            return "[promise::await [promise::ptimer $a Time]] [promise::await [promise::ptimer $b out]]"
+        }
+        set now [clock milliseconds]
+        set p [asyncproc 100 150]
+        $p done [handler]
+        wait
+        set interval [expr {[clock milliseconds]-$now}]
+        list [result] [expr {$interval >  200}]
+    } -result {{{Time out} 0} 1}
+
+    test async-8 {async await rejected} -body {
+        promise::async asyncproc {a b} {
+            return "[promise::await [promise::ptimeout $a]] [promise::await [promise::ptimer $b out]]"
+        }
+        set now [clock milliseconds]
+        set p [asyncproc 100 150]
+        $p done "" [handler]
+        wait
+        list [errorresult] [errorcode]
+    } -result {{{Operation timed out.} 0} {{Operation timed out.} {PROMISE TIMER EXPIRED} 0}}
+
+    test async-9 {async await rejected} -body {
+        promise::async asyncproc {a b} {
+            return "[promise::await [promise::ptimer $a Time]] [promise::await [promise::ptimeout $b out]]"
+        }
+        set now [clock milliseconds]
+        set p [asyncproc 100 150]
+        $p done "" [handler]
+        wait
+        list [errorresult] [errorcode]
+    } -result {{out 0} {out {PROMISE TIMER EXPIRED} 0}}
 }
 
 tcltest::cleanupTests
