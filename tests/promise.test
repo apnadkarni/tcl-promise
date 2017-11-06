@@ -826,6 +826,53 @@ namespace eval promise::test {
         wait
         list [errorresult] [errorcode]
     } -result {{out 0} {out {PROMISE TIMER EXPIRED} 0}}
+
+    test async_fulfill-0 {async_fulfill} -body {
+        promise::async asyncproc {a b} {
+            promise::async_fulfill [expr {$a+$b}]
+            return 0
+        }
+        set p [asyncproc 40 2]
+        $p done [handler]
+        wait
+        result
+    } -result {42 0}
+
+    test async_reject-0 {async_reject} -body {
+        promise::async asyncproc {} {
+            catch {set nosuchvar} res ropts
+            promise::async_reject $res $ropts
+            return 0
+        }
+        set p [asyncproc]
+        $p done "" [handler]
+        wait
+        list [errorresult] [errorcode]
+    } -result {{{can't read "nosuchvar": no such variable} 0} {{can't read "nosuchvar": no such variable} {TCL READ VARNAME} 0}}
+    
+    test async_chain-0 {async_chain fulfilled} -body {
+        promise::async asyncproc {} {
+            set p [promise::ptimer 10 "Timer fired"]
+            promise::async_chain $p
+            return 0
+        }
+        set p [asyncproc]
+        $p done [handler]
+        wait
+        result
+    } -result {{Timer fired} 0}
+    
+    test async_chain-1 {async_chain rejected} -body {
+        promise::async asyncproc {} {
+            set p [promise::ptimeout 10]
+            promise::async_chain $p
+            return 0
+        }
+        set p [asyncproc]
+        $p done "" [handler]
+        wait
+        list [errorresult] [errorcode]
+    } -result {{{Operation timed out.} 0} {{Operation timed out.} {PROMISE TIMER EXPIRED} 0}}
 }
 
 tcltest::cleanupTests

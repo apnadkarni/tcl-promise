@@ -837,6 +837,8 @@ proc promise::async {name paramdefs body} {
         proc %NAME% {%PARAMDEFS%} {
             set p [promise::Promise new [promise::lambda {real_args prom} {
                 coroutine ::promise::async#[info cmdcount] {*}[promise::lambda {p args} {
+                    upvar #1 _current_async_promise current_p
+                    set current_p $p
                     set status [catch [list apply [list {%PARAMDEFS%} {%BODY%} %NS%] {*}$args] res ropts]
                     if {$status == 0} {
                         $p fulfill $res
@@ -854,6 +856,52 @@ proc promise::async {name paramdefs body} {
                           %NS% $ns] $tmpl]
 }
 
+proc promise::async_fulfill {val} {
+    # Fulfills a promise for an async procedure with the specified value.
+    #  val - the value with which to fulfill the promise
+    # This command must only be called with the context of an [async]
+    # procedure.
+    #
+    # Returns an empty string.
+    upvar #1 _current_async_promise current_p
+    if {![info exists current_p]} {
+        error "async_fulfill called from outside an async context."
+    }
+    $current_p fulfill $val
+    return
+}
+
+proc promise::async_reject {val {edict {}}} {
+    # Rejects a promise for an async procedure with the specified value.
+    #  val - the value with which to reject the promise
+    #  edict - error dictionary for rejection
+    # This command must only be called with the context of an [async]
+    # procedure.
+    #
+    # Returns an empty string.
+    upvar #1 _current_async_promise current_p
+    if {![info exists current_p]} {
+        error "async_reject called from outside an async context."
+    }
+    $current_p reject $val $edict
+    return
+}
+
+proc promise::async_chain {prom} {
+    # Chains a promise for an async procedure with to the specified promise.
+    #  prom - the promise to which the async promise is to be linked.
+    # This command must only be called with the context of an [async]
+    # procedure.
+    #
+    # Returns an empty string.
+    upvar #1 _current_async_promise current_p
+    if {![info exists current_p]} {
+        error "async_chain called from outside an async context."
+    }
+    $current_p chain $prom
+    return
+}
+
 proc promise::pfulfilled {value} {
     # Returns a new promise that is already fulfilled with the specified value.
     #  value - the value with which to fulfill the created promise
@@ -862,14 +910,15 @@ proc promise::pfulfilled {value} {
     } $value]]
 }
 
-proc promise::prejected {value} {
+proc promise::prejected {value {edict {}}} {
     # Returns a new promise that is already rejected.
     #  value - the value with which to reject the promise
+    #  edict - error dictionary for rejection
     # By convention, $value should be of the format returned by
     # [rejection].
-    return [Promise new [lambda {value prom} {
-        $prom reject $value
-    } $value]]
+    return [Promise new [lambda {value edict prom} {
+        $prom reject $value $edict
+    } $value $edict]]
 }
 
 proc promise::pgeturl {url args} {
