@@ -41,7 +41,7 @@ namespace eval promise::test {
     
     test version-0 {Test the version} -body {
         ::promise::version
-    } -result 1.0.3
+    } -result 1.1.0
 
     test pfulfilled-0 {pfulfilled} -body {
         [promise::pfulfilled "Fulfill value"] done [handler]
@@ -873,6 +873,17 @@ namespace eval promise::test {
         wait
         list [errorresult] [errorcode]
     } -result {{{Operation timed out.} 0} {{Operation timed out.} {PROMISE TIMER EXPIRED} 0}}
+
+    test eventloop-1 {eventloop fulfilled} -body {
+        set timer [promise::ptimer 1000]
+        promise::eventloop $timer
+    } -result "Timer expired."
+
+    test eventloop-1 {eventloop fulfilled} -body {
+        set timer [promise::ptimeout 1000]
+        promise::eventloop $timer
+    } -result "Operation timed out." -returnCodes error
 }
+
 
 tcltest::cleanupTests

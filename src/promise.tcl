@@ -25,7 +25,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace eval promise {
-    proc version {} { return 1.0.3 }
+    proc version {} { return 1.1.0 }
 }
 
 proc promise::lambda {params body args} {
@@ -888,7 +888,7 @@ proc promise::async_reject {val {edict {}}} {
 }
 
 proc promise::async_chain {prom} {
-    # Chains a promise for an async procedure with to the specified promise.
+    # Chains a promise for an async procedure to the specified promise.
     #  prom - the promise to which the async promise is to be linked.
     # This command must only be called with the context of an [async]
     # procedure.
@@ -919,6 +919,40 @@ proc promise::prejected {value {edict {}}} {
     return [Promise new [lambda {value edict prom} {
         $prom reject $value $edict
     } $value $edict]]
+}
+
+proc promise::eventloop {prom} {
+    # Waits in the eventloop until the specified promise is settled.
+    #  prom - the promise to be waited on
+    # The command enters the event loop in similar fashion to the
+    # Tcl `vwait` command except that instead of waiting on a variable
+    # the command waits for the specified promise to be settled. As such
+    # it has the same caveats as the `vwait` command in terms of care
+    # being taken in nested calls etc.
+    #
+    # The primary use of the command is at the top level of a script
+    # to wait for one or more promise based tasks to be completed. Again,
+    # similar to the `vwait forever` idiom.
+    # 
+    #
+    # Returns the resolved value of $prom if it is fulfilled or raises an error
+    # if it is rejected.
+
+    set varname [namespace current]::_pwait_[info cmdcount]
+    $prom done \
+        [lambda {varname result} {
+            set $varname [list success $result]
+        } $varname] \
+        [lambda {varname error ropts} {
+            set $varname [list fail $error $ropts]
+        } $varname]
+    vwait $varname
+    lassign [set $varname] status result ropts
+    if {$status eq "success"} {
+        return $result
+    } else {
+        return -options $ropts $result
+    }
 }
 
 proc promise::pgeturl {url args} {
