@@ -478,7 +478,9 @@ oo::class create promise::Promise {
         # code when the promise is settled.
         #   cleaner - command prefix to run on settlement
         # This method is intended to run a clean up script 
-        # when a promise is settled. It may also be called multiple times
+        # when a promise is settled. Its primary use is to avoid duplication
+        # of code in the `then` and `catch` handlers for a promise.
+        # It may also be called multiple times
         # to clean up intermediate steps when promises are chained.
         # 
         # The method returns a new promise that will be settled
@@ -1008,7 +1010,7 @@ proc promise::ptimer {millisecs {value "Timer expired."}} {
     # of fulfilling it.
     
     return [Promise new [lambda {millisecs value prom} {
-        if {![string is integer $millisecs]} {
+        if {![string is integer -strict $millisecs]} {
             # We don't allow "idle", "cancel" etc. as an argument to after
             throw {PROMISE TIMER INVALID} "Invalid timeout value \"$millisecs\"."
         }
@@ -1029,7 +1031,7 @@ proc promise::ptimeout {millisecs {value "Operation timed out."}} {
     # of rejecting it.
 
     return [Promise new [lambda {millisecs value prom} {
-        if {![string is integer $millisecs]} {
+        if {![string is integer -strict $millisecs]} {
             # We don't want to accept "idle", "cancel" etc. for after
             throw {PROMISE TIMER INVALID} "Invalid timeout value \"$millisecs\"."
         }
