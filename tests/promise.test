@@ -215,23 +215,13 @@ namespace eval promise::test {
         errorcode
     } -result {{invalid command name "notapromise"} {TCL LOOKUP COMMAND notapromise} 0}
     
-    test all-2 {all - reject} -setup {
-        set p1 [promise::ptimer 50 p1]
-        set p2 [promise::ptimeout 100 p2]
-    } -body {
-        # Note p2 which rejects later is listed last
-        [promise::all [list $p1 $p2]] done [handler] [handler]
-        wait
-        errorcode
-    } -result {p2 {PROMISE TIMER EXPIRED} 0}
-    
-    test all-3 {all} -body {
+    test all-2 {all} -body {
         [promise::all [list ]] done [handler] [handler]
         wait
         result
     } -result {{} 0}
 
-    test all-4 {all - garbage collection} -body {
+    test all-3 {all - garbage collection} -body {
         # The test starts two timers and wait on both. We want to ensure
         # when the short timer runs out, it is not garbage collected before
         # the all command issues a done on it. Notice the short timer
@@ -246,7 +236,28 @@ namespace eval promise::test {
         wait
         result
     } -result {{p2 p1} 0}
+
+    test all-4 {all - reject} -setup {
+        set p1 [promise::ptimer 50 p1]
+        set p2 [promise::ptimeout 100 p2]
+    } -body {
+        # Note p2 which rejects later is listed last
+        [promise::all [list $p1 $p2]] done [handler] [handler]
+        wait
+        errorcode
+    } -result {p2 {PROMISE TIMER EXPIRED} 0}
     
+    test all-5 {all - reject early} -setup {
+        set p1 [promise::ptimer 100 p1]
+        set p2 [promise::ptimeout 50 p2]
+    } -body {
+        # Verify rejects do not wait for other promises to settle
+        [promise::all [list $p2 $p1]] done [handler] [handler]
+        wait
+        errorcode
+    } -result {p2 {PROMISE TIMER EXPIRED} 1}
+    
+        
     test all*-0 {all*} -body {
         [promise::all* [promise::ptimer 100 p2] [promise::ptimer 50 p1] [promise::ptimer 300 p3]] done [handler] [handler]
         wait
@@ -879,7 +890,7 @@ namespace eval promise::test {
         promise::eventloop $timer
     } -result "Timer expired."
 
-    test eventloop-1 {eventloop fulfilled} -body {
+    test eventloop-2 {eventloop fulfilled} -body {
         set timer [promise::ptimeout 1000]
         promise::eventloop $timer
     } -result "Operation timed out." -returnCodes error

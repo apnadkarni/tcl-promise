@@ -60,6 +60,10 @@ oo::class create promise::Promise {
     #  CHAINED  - The promise is attached to another promise
     variable _state
 
+    # Stores data that is accessed through the setdata/getdata methods.
+    # The Promise class itself does not use this.
+    variable _clientdata
+
     # The promise value once it is fulfilled or rejected. In the latter
     # case, it should be an the error message
     variable _value
@@ -103,6 +107,7 @@ oo::class create promise::Promise {
         set _do_gc 0
         set _bgerror_done 0
         set _nrefs 0
+        array set _clientdata {}
         
         # Errors in the construction command are returned via
         # the standard mechanism of reject.
@@ -136,6 +141,28 @@ oo::class create promise::Promise {
         # The promise state may be one of the values 'PENDING',
         # 'FULFILLED', 'REJECTED' or 'CHAINED'
         return $_state
+    }
+
+    method getdata {key} {
+        # Returns data previously stored through the setdata method.
+        #  key - key whose associated values is to be returned.
+        # An error will be raised if no value is associated with the key.
+        return $_clientdata($key)
+    }
+
+    method setdata {key value} {
+        # Sets a value to be associated with a key.
+        #  key - the lookup key
+        #  value - the value to be associated with the key
+        # A promise internally maintains a dictionary whose values can
+        # be accessed with the [getdata] and [setdata] methods. This
+        # dictionary is not used by the Promise class itself but is meant
+        # to be used by promise library specializations or applications.
+        # Callers need to take care that keys used for a particular
+        # promise are sufficiently distinguishable so as to not clash.
+        #
+        # Returns the value stored with the key.
+        set _clientdata($key) $value
     }
     
     method value {} {
@@ -667,35 +694,29 @@ proc promise::all {promises} {
     # values of the contained promises.
     
     set all_promise [Promise new [lambda {promises prom} {
-        if {[llength $promises] == 0} {
+        set npromises [llength $promises]
+        if {$npromises == 0} {
             $prom fulfill {}
             return
         }
 
-        # See test all-4. We want to make sure promises do not go away
-        # until we have finished recursively queuing done calls on them.
-        # In case of errors, we have to unref the ones we had ref'ed
-        # so keep track of them (in case some are not even Promise objects)
-        set refed_promises {}
-        try {
-            foreach promise $promises {
-                $promise ref
-                lappend refed_promises $promise
-            }
-            set promises [lassign $promises first_promise]
-            $first_promise done \
-                [list ::promise::_all_helper $prom $first_promise $promises {} FULFILLED] \
-                [list ::promise::_all_helper $prom $first_promise $promises {} REJECTED]
-        } on error {msg edict} {
-            foreach promise $refed_promises {
-                $promise unref
-                $promise done
-            }
-            return -options $edict $msg
+        # Ask each promise to update us when resolved.
+        foreach promise $promises {
+            $promise done \
+                [list ::promise::_all_helper $prom $promise FULFILLED] \
+                [list ::promise::_all_helper $prom $promise REJECTED]
         }
-        } $promises]]
-                 
+
+        # We keep track of state with a dictionary that will be
+        # stored in $prom with the following keys:
+        #  PROMISES - the list of promises in the order passed
+        #  PENDING_COUNT - count of unresolved promises
+        #  RESULTS - dictionary keyed by promise and containing resolved value
+        set all_state [list PROMISES $promises PENDING_COUNT $npromises RESULTS {}]
         
+        $prom setdata ALLPROMISES $all_state
+    } $promises]]
+                 
     return $all_promise
 }
 
@@ -711,21 +732,20 @@ proc promise::all* args {
 
 # Callback for promise::all.
 #  all_promise - the "master" promise returned by the all call.
-#  done_promise - the promise whose callback is being serviced. Need to unref it
-#  remaining_promises - the list of remaining promises still to be resolved.
-#  values - values collected so far from fulfilled promises
+#  done_promise - the promise whose callback is being serviced.
 #  resolution - whether the current promise was resolved with "FULFILLED"
 #   or "REJECTED"
 #  value - the value of the currently fulfilled promise or error description
 #   in case rejected
-proc promise::_all_helper {all_promise done_promise remaining_promises values resolution value {edict {}}} {
-    $done_promise unref
-    
-    # TBD - this does not seem the best way to do this. In particular,
-    # an earlier promise might stay pending though a later promise has
-    # rejected causing us to wait unnecesarily
+#  edict - error dictionary (if promise was rejected)
+proc promise::_all_helper {all_promise done_promise resolution value {edict {}}} {
     if {![info object isa object $all_promise]} {
         # The object has been deleted. Naught to do
+        return
+    }
+    if {[$all_promise state] ne "PENDING"} {
+        # Already settled. This can happen when a tracked promise is
+        # rejected and another tracked promise gets settled afterwards.
         return
     }
     if {$resolution eq "REJECTED"} {
@@ -734,21 +754,20 @@ proc promise::_all_helper {all_promise done_promise remaining_promises values re
         $all_promise reject $value $edict
         return
     }
-    lappend values $value
-    if {[llength $remaining_promises] == 0} {
-        # No more promises left. All done.
-        $all_promise fulfill $values
-        return
-    }
 
-    # Wait on the remaining promises
-    set remaining_promises [lassign $remaining_promises next]
-    if {[catch {
-        $next done \
-            [list [namespace current]::_all_helper $all_promise $next $remaining_promises $values FULFILLED] \
-            [list [namespace current]::_all_helper $all_promise $next $remaining_promises $values REJECTED]
-    } msg edict]} {
-        $all_promise reject $msg $edict
+    # Update the state of the resolved tracked promise
+    set all_state [$all_promise getdata ALLPROMISES]
+    dict set all_state RESULTS $done_promise $value
+    dict incr all_state PENDING_COUNT -1
+    $all_promise setdata ALLPROMISES $all_state
+
+    # If all promises resolved, resolve the all promise
+    if {[dict get $all_state PENDING_COUNT] == 0} {
+        set values {}
+        foreach prom [dict get $all_state PROMISES] {
+            lappend values [dict get $all_state RESULTS $prom]
+        }
+        $all_promise fulfill $values
     }
     return
 }
