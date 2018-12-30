@@ -36,18 +36,11 @@ proc promise::lambda {params body args} {
     #     is invoked
     #
     # This is just a convenience command since anonymous procedures are
-    # commonly useful with promises. The 'lambda' package from 'tcllib'
+    # commonly useful with promises. The lambda package from tcllib
     # is identical in function.
 
     return [list ::apply [list $params $body] {*}$args]
 }
-
-# Credits:
-# This implementation is based on the spec and tutorials at
-# https://promisesaplus.com/
-# https://www.promisejs.org,
-# https://github.com/domenic/promises-unwrapping,
-# https://github.com/kriskowal/q/blob/v1/design/README.js,
 
 catch {promise::Promise destroy}
 oo::class create promise::Promise {
@@ -946,14 +939,14 @@ proc promise::eventloop {prom} {
     # Waits in the eventloop until the specified promise is settled.
     #  prom - the promise to be waited on
     # The command enters the event loop in similar fashion to the
-    # Tcl `vwait` command except that instead of waiting on a variable
+    # Tcl [vwait] command except that instead of waiting on a variable
     # the command waits for the specified promise to be settled. As such
-    # it has the same caveats as the `vwait` command in terms of care
+    # it has the same caveats as the vwait command in terms of care
     # being taken in nested calls etc.
     #
     # The primary use of the command is at the top level of a script
     # to wait for one or more promise based tasks to be completed. Again,
-    # similar to the `vwait forever` idiom.
+    # similar to the vwait forever idiom.
     # 
     #
     # Returns the resolved value of $prom if it is fulfilled or raises an error
