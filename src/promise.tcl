@@ -24,6 +24,8 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+package require Tcl 8.6
+
 namespace eval promise {
     proc version {} { return 1.1.0 }
 }
@@ -1261,24 +1263,36 @@ package provide promise [promise::version]
 
 if {[info exists ::argv0] &&
     [file tail [info script]] eq [file tail $::argv0]} {
+    set filename [file tail [info script]]
     if {[llength $::argv] == 0} {
-        puts "Usage: [file tail [info nameofexecutable]] $::argv0 version|tm|dist"
+        puts "Usage: [file tail [info nameofexecutable]] $::argv0 dist|install|tm|version"
         exit 1
     }
     switch -glob -- [lindex $::argv 0] {
         ver* { puts [promise::version] }
         tm -
         dist* {
-            if {[file extension [info script]] ne ".tm"} {
+            if {[file extension $filename] ne ".tm"} {
                 set dir [file join [file dirname [info script]] .. build]
                 file mkdir $dir
-                file copy -force [info script] [file join $dir [file rootname [info script]]-[promise::version].tm]
+                file copy -force [info script] [file join $dir [file rootname $filename]-[promise::version].tm]
             } else {
                 error "Cannot create distribution from a .tm file"
             }
         }
+        install {
+            set dir [file join [tcl::pkgconfig get libdir,runtime] tcl8 8.6]
+            if {[file extension $filename] eq ".tm"} {
+                # We already are a .tm with version number
+                set target $filename
+            } else {
+                set target [file rootname $filename]-[promise::version].tm
+            }
+            file copy -force [info script] [file join $dir $target]
+        }
         default {
-            error "Unknown option/command \"[lindex $::argv 0]\""
+            puts stderr "Unknown option/command \"[lindex $::argv 0]\""
+            exit 1
         }
     }
 }
