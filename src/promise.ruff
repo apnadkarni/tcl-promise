@@ -4,58 +4,64 @@
 
 source promise.tcl
 
-proc promise::document {path args} {
-    # Generates documentation for the package in HTML format.
-    # path - path to the output file
+namespace eval promise {
+    variable _ruff_start_page {
+        
+        # Introduction
 
-    package require ruff
-
-    lappend introduction Introduction {
-        This package implements the 'promise' abstraction for
+        This package implements the *promise* abstraction for
         asynchronous programming. This document is the reference for
         commands and classes implemented by the package. For a
         tutorial introduction to promises, see the blog posts at
         http://www.magicsplat.com/blog/tags/promises/.
-    } {Download and install} {
+
+        ## Download and install
+
         The package is distributed as a single Tcl module and
         can be downloaded from
         http://sourceforge.net/projects/tcl-promise/files/. It should
         be placed in any of the directories returned by
-        the 'tcl::tm::path list' command in your Tcl installation.
-    } {Loading and requirements} {
+        the `tcl::tm::path list` command in your Tcl installation.
+
+        ## Loading and requirements
+
         The package requires Tcl 8.6 or later and is loaded with the
         standard command
 
-            package require promise
+        ````
+        package require promise
+        ````
 
         All functionality related to promises requires the Tcl event loop
         to be running.
     }
 
-    lappend docs {Promises} {
+    variable _ruff_preamble {
+        ## Promises
+
         The promise abstraction encapsulates the eventual result of a
         possibly asynchronous operation.
 
         This package follows the terminology used in the Javascript world,
         in particular the ECMAScript 2015 Language specification though
         details of implementation differ.
-        
+
         From an application's perspective, a [Promise] object may be in one
         of three states:
 
-        - 'FULFILLED'
-        - 'REJECTED'
-        - 'PENDING', if it is neither of the above
+        * `FULFILLED`
+        * `REJECTED`
+        * `PENDING`, if it is neither of the above
 
         Though the above specification does not explicitly assign meanings
-        to these states, in practice 'FULFILLED' and 'REJECTED' are associated
+        to these states, in practice `FULFILLED` and `REJECTED` are associated
         with successful and failed completion of the operation respectively
-        while 'PENDING' reflects the operation has not completed.
+        while `PENDING` reflects the operation has not completed.
 
         Some additional terms:
 
-        A promise is said to be settled if it is either in the 'FULFILLED'
-        or 'REJECTED' state. A promise that is settled will thereafter never
+        A promise is said to be settled if it is either in the `FULFILLED`
+        or `REJECTED` state. A promise that is settled will thereafter never
         change state.
 
         A promise is said to be resolved if it is settled or if it
@@ -65,18 +71,22 @@ proc promise::document {path args} {
         is settled. These callbacks are refered to as reactions.
 
         Promises are implemented by the [::promise::Promise] class.
-    } {Constructing promises} {
+
+        ## Constructing promises
+
         Promises are constructed by creating instances of the
         [::promise::Promise] class. The constructor is passed a script
         that should initiate an asynchronous operation and at some point
         (immediately or in the future) settle the promise by calling
-        its [fulfill] or [reject] method. Here is a simple example
-        of creating a timer based promise
+        its [::promise::Promise::fulfill] or [::promise::Promise::reject]
+        method. Here is a simple example of creating a timer based promise
         (the implementation of the [ptimer] command).
 
-            return [promise::Promise new [lambda {millisecs value prom} {
-                after $millisecs [list $prom fulfill $value]
-            } 1000 "Timed out"]]
+        ````
+        return [promise::Promise new [lambda {millisecs value prom} {
+            after $millisecs [list $prom fulfill $value]
+        } 1000 "Timed out"]]
+        ````
 
         The package includes several commands for constructing promises
         for common operations. These are layered on top
@@ -85,13 +95,14 @@ proc promise::document {path args} {
 
         [pconnect] - establishes a socket client connection
         [pexec] - runs an external program collecting its output
-        [pgeturl] - retrieves a URL using the [http] package
+        [pgeturl] - retrieves a URL using the `http` package
         [ptask] - runs a script in a separate Tcl thread
         [ptimeout] - rejects a promise when a timer expires
         [ptimer] - fulfills sa promise when a timer expires
         [pworker] - runs a script in a Tcl thread pool
-        
-    } {Settling promises} {
+
+        ## Settling promises
+
         When the asynchronous code associated with a promise completes,
         either successfully or with an error, it has to update the
         promise with the result value. On a successful completion,
@@ -101,54 +112,70 @@ proc promise::document {path args} {
         the promise should be fulfilled (or rejected) should be passed
         to the method.
 
-        In the preceding example, the 'after' callback settles the
-        promise by calling its 'fulfill' method.
+        In the preceding example, the `after` callback settles the
+        promise by calling its `fulfill` method.
 
-            $prom fulfill $value
-    } {Promise reactions} {
+        ````
+        $prom fulfill $value
+        ````
+
+        ## Promise reactions
+
         An application will generally register callbacks,
         called reactions as in the ES6 specifications, to be invoked
         (asynchronously) when the promise is settled.
 
         In the simplest case, the reactions are registered with the
         [Promise.done] method. In our example above, calling
-        
-            $prom done puts
+
+        ````
+        $prom done puts
+        ````
 
         would print
-        
-            Timed out
 
-        when the promise was fulfilled by the 'after' callback.
+        ````
+        Timed out
+        ````
 
-        The 'done' method may be called multiple times and each
+        when the promise was fulfilled by the `after` callback.
+
+        The [Promise.done] method may be called multiple times and each
         reaction registered through it will be run when the promise
         is settled.
-    } {Chaining promises} {
+
+        ## Chaining promises
+
         In more complex scenarios, the application may wish to take
         additional asynchronous actions when one is completed. In this
         case, it can make use of the [Promise.then] method instead of,
         or in addition to, the 'done' method. For example, if
         we wanted to run another timer after the first one completes,
         the following code would do the job. Here we use the
-        convenience [timer] command to illustrate.
+        convenience [ptimer] command to illustrate.
 
-            set prom1 [promise::ptimer 1000 "Timer 1 expired"]
-            set prom2 [$prom1 then [lambda {value} {
-                puts $value
-                promise::then_chain [promise::ptimer 2000 "Timer 2 expired"]
-            }]]
-            $prom2 done puts
-                   
+        ````
+        set prom1 [promise::ptimer 1000 "Timer 1 expired"]
+        set prom2 [$prom1 then [lambda {value} {
+            puts $value
+            promise::then_chain [promise::ptimer 2000 "Timer 2 expired"]
+        }]]
+        $prom2 done puts
+        ````
+
         After the first timer is settled, the reaction registered by
-        the [then] method is run. This chains another promise based
+        the [Promise.then] method is run. This chains another promise based
         on a second timer. You should see
-        
+
+        ````
             Timer 1 expired
             Timer 2 expired
+        ````
 
         about 2 seconds apart.
-    } {Combining promises} {        
+
+        ## Combining promises
+
         One of the biggest benefits of promises stems from the ability
         to easily combine them.
 
@@ -156,15 +183,18 @@ proc promise::document {path args} {
         use the [all] or [all*] commands to
         register an reaction for when all of them complete.
 
-            set calculation [all* [ptask {expr 2+3}] [ptask {expr 4+5}]]
-            $calculation done [lambda {values} {
-                puts [tcl::mathop::+ {*}$values]
-            }] [lambda {errval} {puts "Error: [lindex $errval 0]"}]
-        
+        ````
+        set calculation [all* [ptask {expr 2+3}] [ptask {expr 4+5}]]
+        $calculation done [lambda {values} {
+            puts [tcl::mathop::+ {*}$values]
+        }] [lambda {errval} {puts "Error: [lindex $errval 0]"}]
+        ````
+
         Conversely, you can use the [race] or [race*] commands to schedule
         an reaction for when any one of several operations completes.
-        
-    } {Cleaning up} {
+
+        ## Cleaning up
+
         Cleaning up a series of promise-based async operations has two
         aspects. The first is to clean up any resources that were
         allocated. The second is to destroy the [Promise] object itself.
@@ -186,31 +216,33 @@ proc promise::document {path args} {
         run. This removes the burden from the application in the most common
         usage scenarios. In cases where the application wants the object to
         persist, for example, when the resolved value is accessed multiple
-        times, it can use the 'ref' and 'unref' methods of a
+        times, it can use the [Promise.ref] and [Promise.unref] methods of a
         [::promise::Promise] object to explicitly manage its lifetime.
-        
     }
-    
-    foreach {title docstring} $introduction {
-        lappend introlist $title [ruff::extract_docstring $docstring]
-    }
-    
-    foreach {title docstring} $docs {
-        lappend doclist $title [ruff::extract_docstring $docstring]
-    }
-    ::ruff::document_namespaces html [namespace current] \
+}
+
+proc promise::document {dir args} {
+    # Generates documentation for the package in HTML format.
+    variable _ruff_start_page
+
+    package require ruff
+
+    ::ruff::document [namespace current] \
         -includesource true \
         -hidesourcecomments true \
+        -excludeprocs ^_.* \
         -autolink false \
         -recurse true \
-        -output $path \
-        -titledesc "promise (V[version])" \
+        -outdir $dir \
+        -outfile promise-[version].html \
+        -titledesc "promise" \
         -copyright "[clock format [clock seconds] -format %Y] Ashok P. Nadkarni" \
+        -version [version] \
         {*}$args \
-        -preamble [dict create :: $introlist ::promise $doclist]
+        -preamble $_ruff_start_page
 }
 
 set dir [file join [file dirname [info script]] .. build]
 file mkdir $dir
-promise::document [file join $dir promise-[promise::version].html]
+promise::document $dir
 
