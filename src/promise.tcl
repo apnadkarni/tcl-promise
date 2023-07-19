@@ -1,4 +1,4 @@
-# Copyright (c) 2015, Ashok P. Nadkarni
+# Copyright (c) 2015-2023, Ashok P. Nadkarni
 # All rights reserved.
 
 # Redistribution and use in source and binary forms, with or without
@@ -23,8 +23,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-package require Tcl 8.6
 
 namespace eval promise {
     proc version {} { return 1.1.0 }
@@ -1281,7 +1279,19 @@ if {[info exists ::argv0] &&
             }
         }
         install {
-            set dir [file join [tcl::pkgconfig get libdir,runtime] tcl8 8.6]
+            # Install in first native file system that exists on search path
+            foreach path [tcl::tm::path list] {
+                if {[lindex [file system $path] 0] eq "native"} {
+                    set dir $path
+                    if {[file isdirectory $path]} {
+                        break
+                    }
+                    # Else keep looking
+                }
+            }
+            if {![file exists $dir]} {
+                file mkdir $dir
+            }
             if {[file extension $filename] eq ".tm"} {
                 # We already are a .tm with version number
                 set target $filename
