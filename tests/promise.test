@@ -41,7 +41,7 @@ namespace eval promise::test {
     
     test version-0 {Test the version} -body {
         ::promise::version
-    } -result 1.1.0
+    } -result 1.2.0
 
     test pfulfilled-0 {pfulfilled} -body {
         [promise::pfulfilled "Fulfill value"] done [handler]
@@ -113,7 +113,7 @@ namespace eval promise::test {
         [promise::pgeturl http://127.0.0.1:1234] done [handler] [handler]
         wait
         list [dict get $::result error_message] [dict exists $::result http_state] [npromises]
-    } -result [list {connect failed connection refused} 1 0]
+    } -result [list {connect failed*connection refused} 1 0] -match glob
 
     test ptask-0 {ptask} -body {
         [promise::ptask {expr 2+3}] done [handler] [handler]

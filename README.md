@@ -3,4 +3,4 @@ allowing you to write the code in a sequential style. This project implements
 promises for the Tcl language.
 
 See the [documentation](https://tcl-promise.magicsplat.com/) and
-[blog](http://www.magicsplat.com/blog/tags/promises/) for more information.
+[blog](https://www.magicsplat.com/blog/tags/promises/) for more information.

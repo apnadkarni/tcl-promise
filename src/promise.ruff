@@ -23,10 +23,16 @@ namespace eval promise {
         be placed in any of the directories returned by
         the `tcl::tm::path list` command in your Tcl installation.
 
+        Alternately, after downloading to a temporary directory, you
+        can install it with tclsh.
+
+        ```
+        tclsh promise-VERSION.tm install
+        ```
+
         ## Loading and requirements
 
-        The package requires Tcl 8.6 or later and is loaded with the
-        standard command
+        The package is loaded with the usual means
 
         ````
         package require promise
