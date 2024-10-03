@@ -444,8 +444,9 @@ oo::class create promise::Promise {
         #  on_reject - command prefix for the reaction to run
         #    if the promise is rejected. If unspecified or an empty string,
         #    no reject reaction is registered.
-        # Both reactions are called with an additional argument which is
-        # the value with which the promise was settled.
+        # Both reactions are passed the value with which the promise was settled.
+        # The reject reaction is passed an additional argument which is
+        # the error dictionary.
         #
         # The command may be called multiple times to register multiple
         # reactions to be run at promise settlement. If the promise was

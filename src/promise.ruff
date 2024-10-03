@@ -12,16 +12,16 @@ namespace eval promise {
         This package implements the *promise* abstraction for
         asynchronous programming. This document is the reference for
         commands and classes implemented by the package. For a
-        tutorial introduction to promises, see the blog posts at
-        http://www.magicsplat.com/blog/tags/promises/.
+        tutorial introduction to promises, see the
+        [blog](https://www.magicsplat.com/blog/tags/promises/).
 
         ## Download and install
 
         The package is distributed as a single Tcl module and
-        can be downloaded from
-        http://sourceforge.net/projects/tcl-promise/files/. It should
-        be placed in any of the directories returned by
-        the `tcl::tm::path list` command in your Tcl installation.
+        can be downloaded from the Sourceforge
+        [files](https://sourceforge.net/projects/tcl-promise/files/) area.
+        It should be placed in any of the directories returned by the
+        `tcl::tm::path list` command in your Tcl installation.
 
         Alternately, after downloading to a temporary directory, you
         can install it with tclsh.
@@ -30,9 +30,9 @@ namespace eval promise {
         tclsh promise-VERSION.tm install
         ```
 
-        ## Loading and requirements
+        The package supports Tcl 8.6 and 9.x.
 
-        The package is loaded with the usual means
+        To load the package,
 
         ````
         package require promise
@@ -40,6 +40,7 @@ namespace eval promise {
 
         All functionality related to promises requires the Tcl event loop
         to be running.
+
     }
 
     variable _ruff_preamble {
